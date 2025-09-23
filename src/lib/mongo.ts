@@ -10,14 +10,14 @@ global._mongooseCache = cached;
 export async function dbConnect() {
   if (cached.conn) return cached.conn;
 
-  const uri = process.env.DATABASE_URL; // ← read here, not at top level
+  const uri = process.env.DATABASE_URL; // ← read lazily
   if (!uri) {
-    // During build or if not configured, return null so callers can handle it
+    // In build or missing env: skip connecting; callers must handle null
     return null as unknown as typeof mongoose;
   }
 
   if (!cached.promise) {
-    cached.promise = mongoose.connect(uri /* , { dbName: "humanityhack" } */);
+    cached.promise = mongoose.connect(uri /* { dbName: "humanityhack" } */);
   }
   cached.conn = await cached.promise;
   return cached.conn;

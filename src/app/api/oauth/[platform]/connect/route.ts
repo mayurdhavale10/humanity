@@ -26,7 +26,11 @@ async function getProviderConfig(platform: string) {
 }
 
 function base64url(buf: Buffer) {
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return buf
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 function sha256(s: string) {
   return crypto.createHash("sha256").update(s).digest();
@@ -100,7 +104,11 @@ export async function GET(
     auth.searchParams.set("state", stateVal);
 
     cookieStore.set(`oauth_state_${platform}`, stateVal, {
-      httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 600,
+      httpOnly: true,
+      secure,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 600,
     });
 
     if (provider.pkce) {
@@ -109,7 +117,11 @@ export async function GET(
       auth.searchParams.set("code_challenge", challenge);
       auth.searchParams.set("code_challenge_method", "S256");
       cookieStore.set(`pkce_${platform}`, codeVerifier, {
-        httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 600,
+        httpOnly: true,
+        secure,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 600,
       });
     }
 
@@ -131,13 +143,21 @@ export async function GET(
       code,
       redirectUri: provider.redirectUri,
       codeVerifier,
-      clientAuth: provider.clientAuth, // "basic" for X
+      clientAuth: provider.clientAuth, // "basic" for X, "body" for LinkedIn/IG
     });
 
     // TEMP: hardcode identity during dev
     const userEmail = "demo@local.dev";
 
-    await dbConnect();
+    // 👇 DB-guard: only attempt to save if DB is configured
+    const conn = await dbConnect();
+    if (!conn) {
+      return NextResponse.json(
+        { error: "DB not configured" },
+        { status: 500 }
+      );
+    }
+
     const expiresAt = token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : undefined;
 
     const saved = await SocialProvider.findOneAndUpdate(
@@ -157,7 +177,7 @@ export async function GET(
     cookieStore.set(`pkce_${platform}`, "", { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 0 });
 
     return NextResponse.json({ ok: true, platform, provider: saved });
-  } catch (err: any) {
-    return NextResponse.json({ error: String(err?.message || err) }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: String((err as Error)?.message || err) }, { status: 500 });
   }
 }

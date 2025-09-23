@@ -11,9 +11,17 @@ export async function GET() {
 
   try {
     await dbConnect();
+
+    // Guard: if DATABASE_URL is missing or not connected during build
+    const g = global as unknown as { _mongooseCache?: { conn?: unknown } };
+    if (!g._mongooseCache?.conn) {
+      // No DB available → return empty list (keeps build safe)
+      return NextResponse.json([]);
+    }
+
     const providers = await SocialProvider.find({ userEmail }).lean();
     return NextResponse.json(providers ?? []);
-  } catch (err: any) {
+  } catch (err) {
     console.error("GET /api/oauth/providers error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
