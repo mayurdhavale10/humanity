@@ -73,7 +73,7 @@ async function exchangeCode(opts: {
   return res.json();
 }
 
-// ✅ NAMED EXPORT ONLY — no default export
+// ✅ NAMED EXPORT ONLY
 export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ platform: string }> }
@@ -90,7 +90,6 @@ export async function GET(
   const cookieStore = await cookies();
   const secure = process.env.NODE_ENV === "production";
 
-  // Surface provider error without restarting flow
   if (error) return NextResponse.json({ error, provider: platform }, { status: 400 });
 
   // 1) Start OAuth
@@ -143,31 +142,45 @@ export async function GET(
       code,
       redirectUri: provider.redirectUri,
       codeVerifier,
-      clientAuth: provider.clientAuth, // "basic" for X, "body" for LinkedIn/IG
+      clientAuth: provider.clientAuth,
     });
 
     // TEMP: hardcode identity during dev
     const userEmail = "demo@local.dev";
-
-    // 👇 DB-guard: only attempt to save if DB is configured
     const conn = await dbConnect();
     if (!conn) {
-      return NextResponse.json(
-        { error: "DB not configured" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "DB not configured" }, { status: 500 });
     }
 
     const expiresAt = token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : undefined;
+
+    // 🔥 NEW: fetch Instagram username/id if platform is Instagram
+    let accountRef = platform;
+    let meta: any = { token_type: token.token_type };
+
+    if (platform.toLowerCase() === "instagram") {
+      try {
+        const meRes = await fetch(
+          `https://graph.facebook.com/v19.0/me?fields=id,username&access_token=${token.access_token}`
+        );
+        const meData = await meRes.json();
+        if (meData?.username) {
+          accountRef = meData.username;
+          meta.id = meData.id;
+        }
+      } catch (err) {
+        console.error("Failed to fetch Instagram user info:", err);
+      }
+    }
 
     const saved = await SocialProvider.findOneAndUpdate(
       { userEmail, platform: platform.toUpperCase() },
       {
         accessToken: token.access_token,
         refreshToken: token.refresh_token,
-        accountRef: platform, // TODO: fetch handle/id after auth
+        accountRef,
         expiresAt,
-        meta: { token_type: token.token_type },
+        meta,
       },
       { new: true, upsert: true }
     );

@@ -1,10 +1,16 @@
-export default {
-  clientId: process.env.X_CLIENT_ID!,          // must be defined
-  clientSecret: process.env.X_CLIENT_SECRET!,  // must be defined
+const base =
+  (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+const redirectUri = `${base}/api/oauth/x/connect`;
+
+const cfg = {
+  clientId: process.env.X_CLIENT_ID!,          // required
+  clientSecret: process.env.X_CLIENT_SECRET!,  // required
   authUrl: "https://twitter.com/i/oauth2/authorize",
-  tokenUrl: "https://api.x.com/2/oauth2/token",  // ← try api.x.com (new host)
-  scopes: ["tweet.read", "users.read"],          // keep read-only for now
-  redirectUri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/oauth/x/connect`,
-  pkce: true,
-  clientAuth: "basic" as const,                  // ← REQUIRED for X
+  // If X changes the host again, try api.twitter.com; current is api.x.com:
+  tokenUrl: "https://api.x.com/2/oauth2/token",
+  scopes: ["tweet.read", "users.read"],        // keep read-only for now
+  redirectUri,
+  pkce: true,                                  // X requires PKCE
+  clientAuth: "basic" as const,                // X requires Basic auth on token exchange
 };
+export default cfg;
