@@ -102,6 +102,9 @@ export async function GET(
     const stateVal = crypto.randomUUID();
     auth.searchParams.set("state", stateVal);
 
+    // 🔁 Force Facebook to re-prompt for any newly added scopes
+    auth.searchParams.set("auth_type", "rerequest");
+
     cookieStore.set(`oauth_state_${platform}`, stateVal, {
       httpOnly: true,
       secure,
@@ -154,7 +157,7 @@ export async function GET(
 
     const expiresAt = token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : undefined;
 
-    // 🔥 NEW: fetch Instagram username/id if platform is Instagram
+    // Instagram identity (basic display style). For Graph posting, use the 3-hop resolve.
     let accountRef = platform;
     let meta: any = { token_type: token.token_type };
 
