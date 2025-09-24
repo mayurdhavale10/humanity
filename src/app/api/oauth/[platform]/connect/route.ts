@@ -1,232 +1,195 @@
-// src/app/api/instagram/publish/route.ts
+// src/app/api/oauth/[platform]/connect/route.ts
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import crypto from "crypto";
 import { dbConnect } from "@/lib/mongo";
 import SocialProvider from "@/models/SocialProvider";
 
-// --- Config ---
-const GRAPH_V = "v19.0";
-const DEMO_EMAIL = process.env.DEMO_USER_EMAIL || "demo@local.dev";
-// Optional fallback when /me/accounts returns []:
-const FB_PAGE_ID = process.env.FB_PAGE_ID || ""; // e.g. "841554912354967"
-
-// --- Types (lightweight) ---
-type ProviderDoc = {
-  platform: string;
-  userEmail: string;
-  accessToken: string;
-  accountRef?: string;
-  meta?: Record<string, any>;
-  expiresAt?: Date;
+type ProviderCfg = {
+  clientId: string;
+  clientSecret?: string;
+  authUrl: string;
+  tokenUrl: string;
+  scopes: string[];       // e.g. ["instagram_basic", "pages_show_list", ...]
+  redirectUri: string;    // e.g. https://your.app/api/oauth/instagram/connect
+  pkce?: boolean;
+  clientAuth?: "basic" | "body";
 };
 
-type IgContext = {
-  pageId: string;
-  pageName: string;
-  pageAccessToken: string;
-  instagramBusinessId: string;
-};
-
-// --- Helpers ---
-async function fetchJson(url: string, init?: RequestInit) {
-  const res = await fetch(url, init);
-  let body: any = null;
+async function getProviderConfig(platform: string) {
   try {
-    body = await res.json();
+    const mod = await import(`../../_providers/${platform}.ts`);
+    return (mod as any).default as ProviderCfg;
   } catch {
-    // ignore json parse errors
+    return null;
   }
+}
+
+function base64url(buf: Buffer) {
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+function sha256(s: string) {
+  return crypto.createHash("sha256").update(s).digest();
+}
+
+async function exchangeCode(opts: {
+  tokenUrl: string;
+  clientId: string;
+  clientSecret?: string;
+  code: string;
+  redirectUri: string;
+  codeVerifier?: string;
+  clientAuth?: "basic" | "body";
+}) {
+  const { tokenUrl, clientId, clientSecret, code, redirectUri, codeVerifier, clientAuth } = opts;
+
+  const form = new URLSearchParams();
+  form.set("grant_type", "authorization_code");
+  form.set("code", code);
+  form.set("redirect_uri", redirectUri);
+  form.set("client_id", clientId);
+  if (codeVerifier) form.set("code_verifier", codeVerifier);
+
+  const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded" };
+  if (clientSecret) {
+    if (clientAuth === "basic") {
+      const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+      headers.Authorization = `Basic ${basic}`;
+    } else {
+      form.set("client_secret", clientSecret);
+    }
+  }
+
+  const res = await fetch(tokenUrl, { method: "POST", headers, body: form.toString() });
   if (!res.ok) {
-    const msg =
-      body?.error?.message ||
-      (typeof body === "string" ? body : JSON.stringify(body));
-    throw new Error(`${res.status} ${res.statusText}: ${msg}`);
+    const text = await res.text();
+    throw new Error(`Token exchange failed: ${res.status} ${text}`);
   }
-  return body;
+  return res.json();
 }
 
-/**
- * Resolve Page + IG Business context using:
- *  1) /me/accounts (normal path)
- *  2) FB_PAGE_ID fallback (when /me/accounts returns [])
- */
-async function resolveIgContext(userToken: string): Promise<IgContext> {
-  // 1) Try /me/accounts first
-  const accountsUrl =
-    `https://graph.facebook.com/${GRAPH_V}/me/accounts` +
-    `?fields=id,name,access_token` +
-    `&access_token=${encodeURIComponent(userToken)}`;
+// ✅ GET handler required at /api/oauth/[platform]/connect
+export async function GET(
+  req: NextRequest,
+  ctx: { params: Promise<{ platform: string }> }
+) {
+  const { platform } = await ctx.params;
+  const provider = await getProviderConfig(platform);
+  if (!provider) return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
 
-  const pages = await fetchJson(accountsUrl);
+  const url = new URL(req.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const error = url.searchParams.get("error");
 
-  let pickedPage:
-    | { id: string; name: string; access_token: string }
-    | undefined;
+  const cookieStore = await cookies();
+  const secure = process.env.NODE_ENV === "production";
 
-  if (Array.isArray(pages?.data) && pages.data.length) {
-    // If FB_PAGE_ID provided, prefer it
-    if (FB_PAGE_ID) {
-      pickedPage = pages.data.find((p: any) => String(p.id) === FB_PAGE_ID);
+  if (error) return NextResponse.json({ error, provider: platform }, { status: 400 });
+
+  // 1) Start OAuth
+  if (!code) {
+    const auth = new URL(provider.authUrl);
+    auth.searchParams.set("response_type", "code");
+    auth.searchParams.set("client_id", provider.clientId);
+    auth.searchParams.set("redirect_uri", provider.redirectUri);
+    auth.searchParams.set("scope", provider.scopes.join(",")); // comma-separated for FB dialog
+
+    const stateVal = crypto.randomUUID();
+    auth.searchParams.set("state", stateVal);
+
+    // Force re-consent & account chooser
+    auth.searchParams.set("auth_type", "rerequest");
+    auth.searchParams.set("auth_type", "reauthorize"); // the last set wins; keeps chooser
+
+    cookieStore.set(`oauth_state_${platform}`, stateVal, {
+      httpOnly: true,
+      secure,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 600,
+    });
+
+    if (provider.pkce) {
+      const codeVerifier = base64url(crypto.randomBytes(32));
+      const challenge = base64url(sha256(codeVerifier));
+      auth.searchParams.set("code_challenge", challenge);
+      auth.searchParams.set("code_challenge_method", "S256");
+      cookieStore.set(`pkce_${platform}`, codeVerifier, {
+        httpOnly: true,
+        secure,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 600,
+      });
     }
-    // else take the first page
-    pickedPage ||= pages.data[0];
+
+    return NextResponse.redirect(auth.toString());
   }
 
-  // 2) Fallback: direct lookup by PAGE_ID using the *user token*
-  if (!pickedPage) {
-    if (!FB_PAGE_ID) {
-      throw new Error(
-        "No Facebook Pages found for this user. " +
-          "Fix: ensure the consenting FB user has Facebook access (Full control) to a Page, " +
-          "or set FB_PAGE_ID in your environment to a Page you control."
-      );
-    }
-
-    const pageInfoUrl =
-      `https://graph.facebook.com/${GRAPH_V}/${FB_PAGE_ID}` +
-      `?fields=id,name,access_token,instagram_business_account` +
-      `&access_token=${encodeURIComponent(userToken)}`;
-
-    const pageInfo = await fetchJson(pageInfoUrl);
-
-    if (!pageInfo?.access_token) {
-      throw new Error(
-        `Could not fetch Page access token for PAGE_ID=${FB_PAGE_ID}. ` +
-          `Ensure the consenting FB user has Facebook access (Full control) on this Page ` +
-          `and that you granted pages_manage_metadata/pages_show_list.`
-      );
-    }
-
-    const igBizId = pageInfo?.instagram_business_account?.id;
-    if (!igBizId) {
-      // try again using the page token to fetch ig biz id
-      const pageToken: string = pageInfo.access_token;
-      const igUrl =
-        `https://graph.facebook.com/${GRAPH_V}/${FB_PAGE_ID}` +
-        `?fields=instagram_business_account` +
-        `&access_token=${encodeURIComponent(pageToken)}`;
-      const pageAgain = await fetchJson(igUrl);
-      const igId = pageAgain?.instagram_business_account?.id;
-      if (!igId) {
-        throw new Error(
-          `No Instagram Business Account linked to Page "${pageInfo?.name || FB_PAGE_ID}" (${FB_PAGE_ID}). ` +
-            `Link an IG Business account to this Page in Page settings (Linked accounts → Instagram).`
-        );
-      }
-      return {
-        pageId: FB_PAGE_ID,
-        pageName: pageInfo?.name || "Unknown",
-        pageAccessToken: pageToken,
-        instagramBusinessId: igId,
-      };
-    }
-
-    return {
-      pageId: FB_PAGE_ID,
-      pageName: pageInfo?.name || "Unknown",
-      pageAccessToken: pageInfo.access_token,
-      instagramBusinessId: igBizId,
-    };
+  // 2) Callback → exchange code for token
+  const expectedState = cookieStore.get(`oauth_state_${platform}`)?.value;
+  if (!expectedState || expectedState !== state) {
+    return NextResponse.json({ error: "Invalid state" }, { status: 400 });
   }
+  const codeVerifier = cookieStore.get(`pkce_${platform}`)?.value || undefined;
 
-  // Have a page via /me/accounts
-  const pageId = pickedPage.id;
-  const pageName = pickedPage.name;
-  const pageAccessToken = pickedPage.access_token;
-
-  // Get IG Business ID
-  const igUrl =
-    `https://graph.facebook.com/${GRAPH_V}/${pageId}` +
-    `?fields=instagram_business_account` +
-    `&access_token=${encodeURIComponent(pageAccessToken)}`;
-  const page = await fetchJson(igUrl);
-  const igBusinessId = page?.instagram_business_account?.id;
-
-  if (!igBusinessId) {
-    throw new Error(
-      `No Instagram Business Account linked to Page "${pageName}" (${pageId}). ` +
-        `Link an IG Business account to this Page in Page settings (Linked accounts → Instagram).`
-    );
-  }
-
-  return { pageId, pageName, pageAccessToken, instagramBusinessId: igBusinessId };
-}
-
-// --- Route ---
-export async function POST(req: NextRequest) {
   try {
-    const { imageUrl, caption } = (await req.json()) as {
-      imageUrl?: string;
-      caption?: string;
-    };
+    const token = await exchangeCode({
+      tokenUrl: provider.tokenUrl,
+      clientId: provider.clientId,
+      clientSecret: provider.clientSecret,
+      code,
+      redirectUri: provider.redirectUri,
+      codeVerifier,
+      clientAuth: provider.clientAuth,
+    });
 
-    if (!imageUrl) {
-      return NextResponse.json(
-        { error: "imageUrl is required (publicly accessible URL)" },
-        { status: 400 }
-      );
-    }
-
+    // TEMP user identity for dev
+    const userEmail = "demo@local.dev";
     await dbConnect();
 
-    const provider = (await SocialProvider.findOne({
-      userEmail: DEMO_EMAIL,
-      platform: "INSTAGRAM",
-    }).lean()) as ProviderDoc | null;
+    const expiresAt = token.expires_in
+      ? new Date(Date.now() + token.expires_in * 1000)
+      : undefined;
 
-    if (!provider?.accessToken) {
-      return NextResponse.json(
-        { error: "No Instagram token saved. Connect Instagram first." },
-        { status: 400 }
-      );
+    // Try to attach a human ref for Instagram
+    let accountRef = platform;
+    let meta: any = { token_type: token.token_type };
+
+    if (platform.toLowerCase() === "instagram") {
+      try {
+        const meRes = await fetch(
+          `https://graph.facebook.com/v19.0/me?fields=id,username&access_token=${token.access_token}`
+        );
+        const meData = await meRes.json();
+        if (meData?.username) {
+          accountRef = meData.username;
+          meta.id = meData.id;
+        }
+      } catch { /* ignore */ }
     }
 
-    const userToken = provider.accessToken;
-
-    // Resolve Page + IG Business context (with fallback by FB_PAGE_ID)
-    const ctx = await resolveIgContext(userToken);
-
-    // 1) Create media container
-    const createUrl =
-      `https://graph.facebook.com/${GRAPH_V}/${ctx.instagramBusinessId}/media` +
-      `?image_url=${encodeURIComponent(imageUrl)}` +
-      `&caption=${encodeURIComponent(caption || "")}` +
-      `&access_token=${encodeURIComponent(ctx.pageAccessToken)}`;
-
-    const creation = await fetchJson(createUrl);
-
-    if (!creation?.id) {
-      throw new Error("Failed to create media container.");
-    }
-
-    // 2) Publish
-    const publishUrl =
-      `https://graph.facebook.com/${GRAPH_V}/${ctx.instagramBusinessId}/media_publish` +
-      `?creation_id=${encodeURIComponent(creation.id)}` +
-      `&access_token=${encodeURIComponent(ctx.pageAccessToken)}`;
-
-    const publish = await fetchJson(publishUrl);
-
-    return NextResponse.json({
-      ok: true,
-      publish,
-      context: {
-        pageId: ctx.pageId,
-        pageName: ctx.pageName,
-        igBusinessId: ctx.instagramBusinessId,
+    const saved = await SocialProvider.findOneAndUpdate(
+      { userEmail, platform: platform.toUpperCase() },
+      {
+        accessToken: token.access_token,
+        refreshToken: token.refresh_token,
+        accountRef,
+        expiresAt,
+        meta,
       },
-    });
-  } catch (err: any) {
-    // Bubble up a clear error for your PowerShell catcher to print
-    return NextResponse.json(
-      { error: err?.message || "Publish failed" },
-      { status: 500 }
+      { new: true, upsert: true }
     );
-  }
-}
 
-// Optional: block accidental GETs
-export async function GET() {
-  return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
+    // clear cookies
+    cookieStore.set(`oauth_state_${platform}`, "", { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 0 });
+    cookieStore.set(`pkce_${platform}`, "", { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 0 });
+
+    return NextResponse.json({ ok: true, platform, provider: saved });
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || "Token exchange failed" }, { status: 500 });
+  }
 }
