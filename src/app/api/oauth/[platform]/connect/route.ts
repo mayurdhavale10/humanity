@@ -104,6 +104,9 @@ export async function GET(
 
     // 🔁 Force Facebook to re-prompt for any newly added scopes
     auth.searchParams.set("auth_type", "rerequest");
+    auth.searchParams.set("auth_type", "reauthorize"); // forces account chooser
+
+
 
     cookieStore.set(`oauth_state_${platform}`, stateVal, {
       httpOnly: true,
