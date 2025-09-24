@@ -1,200 +1,114 @@
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongo";
 import SocialProvider from "@/models/SocialProvider";
 
+const GRAPH_V = "v19.0";
+const DEMO_EMAIL = process.env.DEMO_USER_EMAIL || "demo@local.dev";
+
 type ProviderDoc = {
-  platform: string;
-  userEmail: string;
-  accessToken: string;
-  accountRef?: string;
-  meta?: Record<string, any>;
-  expiresAt?: Date;
+  platform: string; userEmail: string; accessToken: string;
+  accountRef?: string; meta?: Record<string, any>;
 };
 
-// ---- Helpers ---------------------------------------------------------------
-
-async function resolveIgContext(userAccessToken: string) {
-  // 1) Get pages that the user manages (need pages_show_list)
-  const pagesRes = await fetch(
-    `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(
-      userAccessToken
-    )}`
-  );
-  const pages = await pagesRes.json();
-  if (!pages?.data?.length) {
-    throw new Error("No Facebook Pages found for this user.");
-  }
-
-  // Pick the first page (or choose one by name/id if you prefer)
-  const page = pages.data[0]; // { id, name, access_token }
-  const pageToken: string = page.access_token;
-
-  // 2) From the page, get the linked IG Business account id
-  const igIdRes = await fetch(
-    `https://graph.facebook.com/v19.0/${page.id}?fields=instagram_business_account&access_token=${encodeURIComponent(
-      userAccessToken
-    )}`
-  );
-  const igIdData = await igIdRes.json();
-  const igBusinessId: string | undefined = igIdData?.instagram_business_account?.id;
-  if (!igBusinessId) {
-    throw new Error(
-      `No Instagram Business Account linked to Page "${page.name}" (${page.id}).`
-    );
-  }
-
-  // 3) For display, fetch the IG username
-  const igUserRes = await fetch(
-    `https://graph.facebook.com/v19.0/${igBusinessId}?fields=username&access_token=${encodeURIComponent(
-      userAccessToken
-    )}`
-  );
-  const igUser = await igUserRes.json();
-
-  return {
-    pageId: page.id as string,
-    pageName: page.name as string,
-    pageToken,
-    igBusinessId,
-    igUsername: igUser?.username as string | undefined,
-  };
+function jerr(msg: string, status = 400, extra?: any) {
+  return NextResponse.json({ error: msg, ...(extra || {}) }, { status });
 }
 
-async function createMediaAndPublish(params: {
-  igBusinessId: string;
-  caption?: string;
-  imageUrl: string;
-  pageToken: string; // we use page token for publishing
-}) {
-  const { igBusinessId, caption, imageUrl, pageToken } = params;
-
-  // Step A: create media container
-  const formA = new URLSearchParams();
-  formA.set("image_url", imageUrl);
-  if (caption) formA.set("caption", caption);
-
-  const createRes = await fetch(
-    `https://graph.facebook.com/v19.0/${igBusinessId}/media`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: formA.toString() + `&access_token=${encodeURIComponent(pageToken)}`,
-    }
-  );
-
-  const createData = await createRes.json();
-  if (!createRes.ok) {
-    throw new Error(
-      `IG /media failed: ${createRes.status} ${JSON.stringify(createData)}`
-    );
+async function fetchJson(url: string, init?: RequestInit) {
+  const res = await fetch(url, init);
+  let body: any = null; try { body = await res.json(); } catch {}
+  if (!res.ok) {
+    const msg = body?.error?.message || (typeof body === "string" ? body : JSON.stringify(body));
+    throw new Error(`${res.status} ${res.statusText}: ${msg}`);
   }
-  const creationId = createData.id as string;
-
-  // Step B: publish the container
-  const formB = new URLSearchParams();
-  formB.set("creation_id", creationId);
-
-  const publishRes = await fetch(
-    `https://graph.facebook.com/v19.0/${igBusinessId}/media_publish`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: formB.toString() + `&access_token=${encodeURIComponent(pageToken)}`,
-    }
-  );
-
-  const publishData = await publishRes.json();
-  if (!publishRes.ok) {
-    throw new Error(
-      `IG /media_publish failed: ${publishRes.status} ${JSON.stringify(
-        publishData
-      )}`
-    );
-  }
-
-  return { creationId, published: publishData?.id };
+  return body;
 }
 
-// ---- Route -----------------------------------------------------------------
+async function resolvePageAndIg(userToken: string) {
+  // 1) which pages does this token’s user see?
+  const pages = await fetchJson(
+    `https://graph.facebook.com/${GRAPH_V}/me/accounts?fields=id,name,access_token` +
+    `&access_token=${encodeURIComponent(userToken)}`
+  );
+  const list: Array<{id:string;name:string;access_token:string}> = pages?.data || [];
+  if (!list.length) {
+    throw new Error(
+      "No Facebook Pages found for this user. " +
+      "Re-connect with the Page admin profile (the same profile listed under Page → Settings → Page access → People with Facebook access)."
+    );
+  }
+
+  // 2) find first page linked to an IG Business account
+  for (const p of list) {
+    try {
+      const pd = await fetchJson(
+        `https://graph.facebook.com/${GRAPH_V}/${p.id}` +
+        `?fields=instagram_business_account&access_token=${encodeURIComponent(p.access_token)}`
+      );
+      const igId = pd?.instagram_business_account?.id;
+      if (!igId) continue;
+
+      let igUsername = "";
+      try {
+        const u = await fetchJson(
+          `https://graph.facebook.com/${GRAPH_V}/${igId}?fields=username` +
+          `&access_token=${encodeURIComponent(p.access_token)}`
+        );
+        igUsername = u?.username || "";
+      } catch {}
+
+      return { pageId: p.id, pageName: p.name, pageAccessToken: p.access_token, igBusinessId: igId, igUsername };
+    } catch { /* try next page */ }
+  }
+
+  throw new Error(
+    "You have Pages, but none are linked to an Instagram Business account. " +
+    "Open the Page → Settings → Linked accounts → connect an Instagram Professional (Business) account."
+  );
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const { imageUrl, caption } = (await req.json()) as { imageUrl?: string; caption?: string };
+    if (!imageUrl) return jerr("imageUrl is required (public URL)");
+
     await dbConnect();
-
-    // TEMP: until auth is wired
-    const userEmail = process.env.DEMO_USER_EMAIL || "demo@local.dev";
-
-    // ✅ Use findOne (not find) so TypeScript knows it's a single doc
     const provider = (await SocialProvider.findOne({
-      userEmail,
-      platform: "INSTAGRAM",
+      userEmail: DEMO_EMAIL, platform: "INSTAGRAM",
     }).lean()) as ProviderDoc | null;
 
-    if (!provider?.accessToken) {
-      return NextResponse.json(
-        { error: "Instagram not connected for this user." },
-        { status: 400 }
-      );
-    }
+    if (!provider?.accessToken) return jerr("Instagram not connected. Connect IG first.");
 
-    // Body: { imageUrl: string; caption?: string }
-    const { imageUrl, caption } = (await req.json()) as {
-      imageUrl: string;
-      caption?: string;
-    };
+    const ctx = await resolvePageAndIg(provider.accessToken);
 
-    if (!imageUrl) {
-      return NextResponse.json(
-        { error: "imageUrl is required" },
-        { status: 400 }
-      );
-    }
+    // 1) create media
+    const create = await fetchJson(
+      `https://graph.facebook.com/${GRAPH_V}/${ctx.igBusinessId}/media` +
+      `?image_url=${encodeURIComponent(imageUrl)}` +
+      `&caption=${encodeURIComponent(caption || "")}` +
+      `&access_token=${encodeURIComponent(ctx.pageAccessToken)}`
+    );
+    if (!create?.id) throw new Error("Failed to create media container.");
 
-    // Resolve IG context (Page → IG Business ID → Page token)
-    const ctx = await resolveIgContext(provider.accessToken);
-
-    // Publish
-    const result = await createMediaAndPublish({
-      igBusinessId: ctx.igBusinessId,
-      caption,
-      imageUrl,
-      pageToken: ctx.pageToken,
-    });
-
-    // Optional: store identity details if missing
-    const needsUpdate = !provider.accountRef || !provider.meta?.igBusinessId;
-    if (needsUpdate) {
-      await SocialProvider.updateOne(
-        { userEmail, platform: "INSTAGRAM" },
-        {
-          $set: {
-            accountRef: provider.accountRef || ctx.igUsername || "instagram",
-            meta: {
-              ...(provider.meta || {}),
-              pageId: ctx.pageId,
-              pageName: ctx.pageName,
-              igBusinessId: ctx.igBusinessId,
-            },
-          },
-        }
-      );
-    }
+    // 2) publish
+    const publish = await fetchJson(
+      `https://graph.facebook.com/${GRAPH_V}/${ctx.igBusinessId}/media_publish` +
+      `?creation_id=${encodeURIComponent(create.id)}` +
+      `&access_token=${encodeURIComponent(ctx.pageAccessToken)}`
+    );
 
     return NextResponse.json({
       ok: true,
-      publish: result,
-      context: {
-        username: ctx.igUsername,
-        pageId: ctx.pageId,
-        pageName: ctx.pageName,
-        igBusinessId: ctx.igBusinessId,
-      },
+      publish,
+      context: { pageId: ctx.pageId, pageName: ctx.pageName, igBusinessId: ctx.igBusinessId, igUsername: ctx.igUsername || provider.accountRef }
     });
-  } catch (err: any) {
-    console.error("POST /api/instagram/publish error:", err);
-    return NextResponse.json(
-      { error: err?.message || "Server error" },
-      { status: 500 }
-    );
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "Publish failed" }, { status: 500 });
   }
+}
+
+export async function GET() {
+  return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }
