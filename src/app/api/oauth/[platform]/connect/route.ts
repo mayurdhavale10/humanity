@@ -98,7 +98,7 @@ export async function GET(
     auth.searchParams.set("response_type", "code");
     auth.searchParams.set("client_id", provider.clientId);
     auth.searchParams.set("redirect_uri", provider.redirectUri);
-    auth.searchParams.set("scope", provider.scopes.join(" "));
+    auth.searchParams.set("scope", provider.scopes.join(","));
     const stateVal = crypto.randomUUID();
     auth.searchParams.set("state", stateVal);
 
