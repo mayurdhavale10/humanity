@@ -12,7 +12,8 @@ export default {
     "pages_show_list",
     "pages_read_engagement",
     "pages_manage_metadata",
-    "instagram_content_publish" // required to publish
+    "instagram_content_publish", // required to publish
+    "business_management" 
   ],
   redirectUri,
   pkce: false,
