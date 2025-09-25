@@ -22,39 +22,49 @@ type ProviderDoc = {
 type IgContext = {
   pageId: string;
   pageName: string;
-  pageAccessToken: string;
+  pageAccessToken: string; // <-- PAGE token, not user token
   instagramBusinessId: string;
   igUsername?: string;
 };
 
 // --- Helpers ---
-async function fetchJson(url: string, init?: RequestInit) {
+async function fetchGraph(
+  url: string,
+  opts?: { method?: "GET" | "POST"; form?: Record<string, string> }
+) {
+  const init: RequestInit = { method: opts?.method || "GET" };
+  if (opts?.form) {
+    init.method = "POST";
+    init.headers = { "Content-Type": "application/x-www-form-urlencoded" };
+    init.body = new URLSearchParams(opts.form).toString();
+  }
+
   const res = await fetch(url, init);
   let body: any = null;
   try {
     body = await res.json();
   } catch {
-    // ignore json parse errors
+    // ignore
   }
   if (!res.ok) {
     const msg =
       body?.error?.message ||
       (typeof body === "string" ? body : JSON.stringify(body));
-    throw new Error(`${res.status} ${res.statusText}: ${msg}`);
+    throw new Error(msg || `Graph ${res.status}`);
   }
   return body;
 }
 
 /**
- * Resolve Page + IG Business context using ONLY:
- *   /me/accounts  (no PAGE_ID fallback)
+ * Resolve Page + IG Business context via /me/accounts using the *user token*.
+ * Returns PAGE access token (required for creating/publishing media).
  */
 async function resolveIgContext(userToken: string): Promise<IgContext> {
-  // 1) List pages the *token’s FB user* can manage
-  const pagesResp = await fetchJson(
-    `https://graph.facebook.com/${GRAPH_V}/me/accounts` +
-      `?fields=id,name,access_token` +
-      `&access_token=${encodeURIComponent(userToken)}`
+  // 1) List pages the token’s FB user can manage
+  const pagesResp = await fetchGraph(
+    `https://graph.facebook.com/${GRAPH_V}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(
+      userToken
+    )}`
   );
 
   const pages: Array<{ id: string; name: string; access_token: string }> =
@@ -62,51 +72,48 @@ async function resolveIgContext(userToken: string): Promise<IgContext> {
 
   if (!pages.length) {
     throw new Error(
-      "No Facebook Pages found for this user. " +
-        "Make sure you re-consent with the Page admin profile and tick the Page during the Facebook dialog. " +
-        "Required scopes: instagram_basic, pages_show_list, pages_read_engagement, pages_manage_metadata, instagram_content_publish."
+      "No Facebook Pages found for this user. Re-consent and tick the Page in the Facebook dialog."
     );
   }
 
-  // 2) Find the first page that has a linked IG Business account
+  // 2) Pick the first page that has a linked IG Business account
   for (const p of pages) {
     try {
-      const pageDetails = await fetchJson(
-        `https://graph.facebook.com/${GRAPH_V}/${p.id}` +
-          `?fields=instagram_business_account` +
-          `&access_token=${encodeURIComponent(p.access_token)}`
+      const pageDetails = await fetchGraph(
+        `https://graph.facebook.com/${GRAPH_V}/${p.id}?fields=instagram_business_account&access_token=${encodeURIComponent(
+          p.access_token
+        )}`
       );
       const igId = pageDetails?.instagram_business_account?.id;
       if (!igId) continue;
 
-      // Optional: get username for nicer context
+      // Optional: username
       let igUsername = "";
       try {
-        const igUser = await fetchJson(
-          `https://graph.facebook.com/${GRAPH_V}/${igId}` +
-            `?fields=username&access_token=${encodeURIComponent(p.access_token)}`
+        const igUser = await fetchGraph(
+          `https://graph.facebook.com/${GRAPH_V}/${igId}?fields=username&access_token=${encodeURIComponent(
+            p.access_token
+          )}`
         );
         igUsername = igUser?.username || "";
       } catch {
-        // ignore username failure
+        /* ignore */
       }
 
       return {
         pageId: p.id,
         pageName: p.name,
-        pageAccessToken: p.access_token,
+        pageAccessToken: p.access_token, // <-- THIS is what we must use for /media & /media_publish
         instagramBusinessId: igId,
         igUsername,
       };
     } catch {
-      // try next page
       continue;
     }
   }
 
   throw new Error(
-    "You have Pages, but none are linked to an Instagram Business account. " +
-      "Open the Page → Settings → Linked accounts → connect an Instagram Professional (Business) account."
+    "Found Pages, but none are linked to an Instagram Business account. Link an IG Professional account in Page settings → Linked accounts → Instagram."
   );
 }
 
@@ -117,6 +124,7 @@ export async function POST(req: NextRequest) {
       imageUrl?: string;
       caption?: string;
     };
+
     if (!imageUrl) {
       return NextResponse.json(
         { error: "imageUrl is required (publicly accessible URL)" },
@@ -126,7 +134,7 @@ export async function POST(req: NextRequest) {
 
     await dbConnect();
 
-    // Read the saved Instagram provider (user token)
+    // Read saved Instagram *user* token
     const provider = (await SocialProvider.findOne({
       userEmail: DEMO_EMAIL,
       platform: "INSTAGRAM",
@@ -141,25 +149,36 @@ export async function POST(req: NextRequest) {
 
     const userToken = provider.accessToken;
 
-    // Resolve Page + IG Business context via /me/accounts only
+    // Resolve PAGE access token and IG business id
     const ctx = await resolveIgContext(userToken);
 
-    // 1) Create media container (use PAGE ACCESS TOKEN)
-    const creation = await fetchJson(
-      `https://graph.facebook.com/${GRAPH_V}/${ctx.instagramBusinessId}/media` +
-        `?image_url=${encodeURIComponent(imageUrl)}` +
-        `&caption=${encodeURIComponent(caption || "")}` +
-        `&access_token=${encodeURIComponent(ctx.pageAccessToken)}`
+    // 1) Create media container (POST form, using PAGE token)
+    const creation = await fetchGraph(
+      `https://graph.facebook.com/${GRAPH_V}/${ctx.instagramBusinessId}/media`,
+      {
+        method: "POST",
+        form: {
+          image_url: imageUrl,
+          caption: caption || "",
+          access_token: ctx.pageAccessToken,
+        },
+      }
     );
+
     if (!creation?.id) {
       throw new Error("Failed to create media container.");
     }
 
-    // 2) Publish
-    const publish = await fetchJson(
-      `https://graph.facebook.com/${GRAPH_V}/${ctx.instagramBusinessId}/media_publish` +
-        `?creation_id=${encodeURIComponent(creation.id)}` +
-        `&access_token=${encodeURIComponent(ctx.pageAccessToken)}`
+    // 2) Publish (POST form, using PAGE token)
+    const publish = await fetchGraph(
+      `https://graph.facebook.com/${GRAPH_V}/${ctx.instagramBusinessId}/media_publish`,
+      {
+        method: "POST",
+        form: {
+          creation_id: String(creation.id),
+          access_token: ctx.pageAccessToken,
+        },
+      }
     );
 
     return NextResponse.json({
@@ -173,6 +192,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err: any) {
+    // Return the raw Graph error message to help debugging from client/CLI
     return NextResponse.json(
       { error: err?.message || "Publish failed" },
       { status: 500 }
