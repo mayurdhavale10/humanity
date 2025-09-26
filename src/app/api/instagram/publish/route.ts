@@ -9,7 +9,7 @@ import SocialProvider from "@/models/SocialProvider";
 const GRAPH_V = "v19.0";
 const DEMO_EMAIL = process.env.DEMO_USER_EMAIL || "demo@local.dev";
 
-// --- Types (lightweight) ---
+// --- Types ---
 type ProviderDoc = {
   platform: string;
   userEmail: string;
@@ -27,31 +27,24 @@ type IgContext = {
   igUsername?: string;
 };
 
-// --- Helpers ---
-async function fetchGraph(
-  url: string,
-  opts?: { method?: "GET" | "POST"; form?: Record<string, string> }
-) {
-  const init: RequestInit = { method: opts?.method || "GET" };
-  if (opts?.form) {
-    init.method = "POST";
-    init.headers = { "Content-Type": "application/x-www-form-urlencoded" };
-    init.body = new URLSearchParams(opts.form).toString();
+// --- Helpers (with detailed Graph error logging) ---
+async function fetchJson(url: string, init?: RequestInit) {
+  const res = await fetch(url, init);
+
+  // Read raw first so we can log even if not JSON
+  const raw = await res.text();
+  let body: any;
+  try { body = JSON.parse(raw); } catch { body = raw; }
+
+  if (!res.ok) {
+    console.error("📉 Graph error", { url, status: res.status, body });
+    const msg =
+      typeof body === "object" && body?.error?.message
+        ? body.error.message
+        : `HTTP ${res.status}`;
+    throw new Error(msg);
   }
 
-  const res = await fetch(url, init);
-  let body: any = null;
-  try {
-    body = await res.json();
-  } catch {
-    // ignore
-  }
-  if (!res.ok) {
-    const msg =
-      body?.error?.message ||
-      (typeof body === "string" ? body : JSON.stringify(body));
-    throw new Error(msg || `Graph ${res.status}`);
-  }
   return body;
 }
 
@@ -61,7 +54,7 @@ async function fetchGraph(
  */
 async function resolveIgContext(userToken: string): Promise<IgContext> {
   // 1) List pages the token’s FB user can manage
-  const pagesResp = await fetchGraph(
+  const pagesResp = await fetchJson(
     `https://graph.facebook.com/${GRAPH_V}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(
       userToken
     )}`
@@ -79,7 +72,7 @@ async function resolveIgContext(userToken: string): Promise<IgContext> {
   // 2) Pick the first page that has a linked IG Business account
   for (const p of pages) {
     try {
-      const pageDetails = await fetchGraph(
+      const pageDetails = await fetchJson(
         `https://graph.facebook.com/${GRAPH_V}/${p.id}?fields=instagram_business_account&access_token=${encodeURIComponent(
           p.access_token
         )}`
@@ -87,28 +80,28 @@ async function resolveIgContext(userToken: string): Promise<IgContext> {
       const igId = pageDetails?.instagram_business_account?.id;
       if (!igId) continue;
 
-      // Optional: username
+      // Optional: username (nice for context)
       let igUsername = "";
       try {
-        const igUser = await fetchGraph(
+        const igUser = await fetchJson(
           `https://graph.facebook.com/${GRAPH_V}/${igId}?fields=username&access_token=${encodeURIComponent(
             p.access_token
           )}`
         );
         igUsername = igUser?.username || "";
       } catch {
-        /* ignore */
+        /* ignore username failure */
       }
 
       return {
         pageId: p.id,
         pageName: p.name,
-        pageAccessToken: p.access_token, // <-- THIS is what we must use for /media & /media_publish
+        pageAccessToken: p.access_token, // <-- use PAGE token for /media & /media_publish
         instagramBusinessId: igId,
         igUsername,
       };
     } catch {
-      continue;
+      continue; // try next page
     }
   }
 
@@ -153,15 +146,16 @@ export async function POST(req: NextRequest) {
     const ctx = await resolveIgContext(userToken);
 
     // 1) Create media container (POST form, using PAGE token)
-    const creation = await fetchGraph(
+    const creation = await fetchJson(
       `https://graph.facebook.com/${GRAPH_V}/${ctx.instagramBusinessId}/media`,
       {
         method: "POST",
-        form: {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
           image_url: imageUrl,
           caption: caption || "",
           access_token: ctx.pageAccessToken,
-        },
+        }).toString(),
       }
     );
 
@@ -170,14 +164,15 @@ export async function POST(req: NextRequest) {
     }
 
     // 2) Publish (POST form, using PAGE token)
-    const publish = await fetchGraph(
+    const publish = await fetchJson(
       `https://graph.facebook.com/${GRAPH_V}/${ctx.instagramBusinessId}/media_publish`,
       {
         method: "POST",
-        form: {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
           creation_id: String(creation.id),
           access_token: ctx.pageAccessToken,
-        },
+        }).toString(),
       }
     );
 
