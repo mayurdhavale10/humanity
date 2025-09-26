@@ -24,6 +24,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Tight image URL validation for IMAGE kind
+    if (body.kind === "IMAGE") {
+      const url = (body as any)?.media?.imageUrl?.trim?.();
+      if (
+        !url ||
+        !/^https?:\/\/.+\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(url)
+      ) {
+        return NextResponse.json(
+          { error: "Provide a valid imageUrl (jpg/png/webp) over https" },
+          { status: 400 }
+        );
+      }
+      // strip stray trailing chars like ')' or spaces
+      (body as any).media = (body as any).media || {};
+      (body as any).media.imageUrl = url.replace(/[)\s]+$/g, "");
+    }
+
     const post = await PlannedPost.create({
       userEmail: body.userEmail,
       platforms: body.platforms,
