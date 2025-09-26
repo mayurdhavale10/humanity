@@ -1,27 +1,34 @@
+// src/app/api/planned-posts/route.ts
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongo";
 import PlannedPost, { IPlannedPost } from "@/models/PlannedPost";
 
-// CREATE a planned post
+// POST /api/planned-posts  -> create a planned post
 export async function POST(req: NextRequest) {
   try {
     await dbConnect();
-    const body = await req.json();
+    const body = (await req.json()) as Partial<IPlannedPost>;
 
-    // minimal guard
-    if (!body?.userEmail) {
-      return NextResponse.json({ error: "userEmail is required" }, { status: 400 });
-    }
-    if (!Array.isArray(body?.platforms) || body.platforms.length === 0) {
-      return NextResponse.json({ error: "platforms[] is required" }, { status: 400 });
-    }
-    if (!body?.kind) {
-      return NextResponse.json({ error: "kind is required" }, { status: 400 });
+    // very light validation
+    if (!body?.userEmail || !body?.platforms?.length || !body?.kind || !body?.caption) {
+      return NextResponse.json(
+        { error: "Missing required fields: userEmail, platforms, kind, caption" },
+        { status: 400 }
+      );
     }
 
-    const post = await PlannedPost.create(body);
+    const post = await PlannedPost.create({
+      userEmail: body.userEmail,
+      platforms: body.platforms,
+      status: body.status ?? "DRAFT",
+      kind: body.kind,
+      caption: body.caption,
+      media: body.media ?? null,
+      scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
+    });
+
     return NextResponse.json({ ok: true, post }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
@@ -31,12 +38,13 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// LIST planned posts for a user
+// GET /api/planned-posts?email=demo@local.dev  -> list posts for a user
 export async function GET(req: NextRequest) {
   try {
     await dbConnect();
     const { searchParams } = new URL(req.url);
     const email = searchParams.get("email");
+
     if (!email) {
       return NextResponse.json({ error: "Missing ?email=" }, { status: 400 });
     }
@@ -46,7 +54,7 @@ export async function GET(req: NextRequest) {
       .lean()
       .exec();
 
-    return NextResponse.json({ ok: true, posts: posts as unknown as IPlannedPost[] });
+    return NextResponse.json({ ok: true, posts });
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message || "Failed to list planned posts" },
