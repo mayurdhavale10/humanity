@@ -1,9 +1,15 @@
 // src/app/api/planned-posts/route.ts
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic"; // avoid any static optimization on Vercel
 
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongo";
 import PlannedPost, { IPlannedPost } from "@/models/PlannedPost";
+
+// Allow preflight or tools that probe OPTIONS
+export async function OPTIONS() {
+  return NextResponse.json({ ok: true });
+}
 
 // POST /api/planned-posts  -> create a planned post
 export async function POST(req: NextRequest) {
@@ -11,7 +17,6 @@ export async function POST(req: NextRequest) {
     await dbConnect();
     const body = (await req.json()) as Partial<IPlannedPost>;
 
-    // very light validation
     if (!body?.userEmail || !body?.platforms?.length || !body?.kind || !body?.caption) {
       return NextResponse.json(
         { error: "Missing required fields: userEmail, platforms, kind, caption" },
