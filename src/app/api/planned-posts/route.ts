@@ -1,68 +1,55 @@
-// src/app/api/cron/run/route.ts
-import { NextResponse } from "next/server";
-import { dbConnect } from "@/lib/mongo";
-import PlannedPost from "@/models/PlannedPost";
-
 export const runtime = "nodejs";
 
-export async function GET() {
+import { NextRequest, NextResponse } from "next/server";
+import { dbConnect } from "@/lib/mongo";
+import PlannedPost, { IPlannedPost } from "@/models/PlannedPost";
+
+// CREATE a planned post
+export async function POST(req: NextRequest) {
   try {
     await dbConnect();
+    const body = await req.json();
 
-    const now = new Date();
-
-    // 1) Find queued posts whose time has arrived
-    const duePosts = await PlannedPost.find({
-      status: { $in: ["SCHEDULED", "QUEUED"] },
-      scheduledAt: { $lte: now },
-    }).lean();
-
-    if (!duePosts.length) {
-      return NextResponse.json({ ok: true, ran: now, processed: 0 });
+    // minimal guard
+    if (!body?.userEmail) {
+      return NextResponse.json({ error: "userEmail is required" }, { status: 400 });
+    }
+    if (!Array.isArray(body?.platforms) || body.platforms.length === 0) {
+      return NextResponse.json({ error: "platforms[] is required" }, { status: 400 });
+    }
+    if (!body?.kind) {
+      return NextResponse.json({ error: "kind is required" }, { status: 400 });
     }
 
-    let processed = 0;
-    for (const post of duePosts) {
-      try {
-        // 🔗 Call your existing Instagram publish API
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_URL}/api/instagram/publish`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              imageUrl: post.media?.url || post.media,
-              caption: post.caption,
-            }),
-          }
-        );
-
-        const data = await res.json();
-
-        if (res.ok && data.ok) {
-          await PlannedPost.findByIdAndUpdate(post._id, {
-            status: "PUBLISHED",
-            publishedAt: new Date(),
-          });
-        } else {
-          await PlannedPost.findByIdAndUpdate(post._id, {
-            status: "FAILED",
-            error: data.error || "Unknown error",
-          });
-        }
-      } catch (err: any) {
-        await PlannedPost.findByIdAndUpdate(post._id, {
-          status: "FAILED",
-          error: err.message,
-        });
-      }
-      processed++;
-    }
-
-    return NextResponse.json({ ok: true, ran: now, processed });
+    const post = await PlannedPost.create(body);
+    return NextResponse.json({ ok: true, post }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err.message || "Cron run failed" },
+      { error: err?.message || "Failed to create planned post" },
+      { status: 500 }
+    );
+  }
+}
+
+// LIST planned posts for a user
+export async function GET(req: NextRequest) {
+  try {
+    await dbConnect();
+    const { searchParams } = new URL(req.url);
+    const email = searchParams.get("email");
+    if (!email) {
+      return NextResponse.json({ error: "Missing ?email=" }, { status: 400 });
+    }
+
+    const posts = await PlannedPost.find({ userEmail: email })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    return NextResponse.json({ ok: true, posts: posts as unknown as IPlannedPost[] });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message || "Failed to list planned posts" },
       { status: 500 }
     );
   }
