@@ -1,47 +1,38 @@
-// src/app/api/oauth/providers/linkedin/start/route.ts
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-const GRAPH_V = "v19.0";
-
-function getLinkedInRedirect() {
-  // This is Facebook’s OAuth for IG; keeping name generic
+function getRedirectUri() {
   return (
-    process.env.IG_REDIRECT_URI ??
+    process.env.LINKEDIN_REDIRECT_URI ??
     (process.env.NEXT_PUBLIC_BASE_URL
-      ? `${process.env.NEXT_PUBLIC_BASE_URL}/api/oauth/providers/instagram/callback`
+      ? `${process.env.NEXT_PUBLIC_BASE_URL.replace(/\/+$/, "")}/api/oauth/providers/linkedin/callback`
       : undefined)
   );
 }
 
-export async function GET(_req: NextRequest) {
-  const appId = process.env.IG_APP_ID;
-  const redirectUri = getLinkedInRedirect();
+export async function GET() {
+  const clientId = process.env.LINKEDIN_CLIENT_ID;
+  const redirectUri = getRedirectUri();
 
-  if (!appId || !redirectUri) {
+  if (!clientId || !redirectUri) {
     return NextResponse.json(
-      { error: "IG_APP_ID or IG_REDIRECT_URI (or NEXT_PUBLIC_BASE_URL) missing" },
+      { error: "Missing LINKEDIN_CLIENT_ID or redirect URI (set LINKEDIN_REDIRECT_URI or NEXT_PUBLIC_BASE_URL)" },
       { status: 500 }
     );
   }
 
-  const scope = [
-    "pages_show_list",
-    "pages_read_engagement",
-    "pages_manage_posts",
-    "pages_manage_metadata",
-    "instagram_basic",
-    "instagram_content_publish",
-  ].join(",");
+  // Minimal scopes for personal posting: r_liteprofile w_member_social
+  const scope = encodeURIComponent("r_liteprofile w_member_social");
+  const state = Math.random().toString(36).slice(2);
 
   const url =
-    `https://www.facebook.com/${GRAPH_V}/dialog/oauth` +
-    `?client_id=${encodeURIComponent(appId)}` +
+    `https://www.linkedin.com/oauth/v2/authorization` +
+    `?response_type=code` +
+    `&client_id=${encodeURIComponent(clientId)}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&response_type=code` +
-    `&scope=${encodeURIComponent(scope)}` +
-    `&state=${encodeURIComponent(Math.random().toString(36).slice(2))}`;
+    `&scope=${scope}` +
+    `&state=${encodeURIComponent(state)}`;
 
   return NextResponse.redirect(url);
 }
