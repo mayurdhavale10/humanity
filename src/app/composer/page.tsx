@@ -1,3 +1,4 @@
+// src/app/composer/page.tsx
 "use client";
 
 import { useState } from "react";
@@ -9,8 +10,10 @@ function toUTCISOStringLocal(dateTimeLocal: string) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString();
 }
 
-// A handy sample image you mentioned
-const SAMPLE_IMG = "https://res.cloudinary.com/dqiolmf7y/image/upload/v1758908532/humanity/rdr_2-removebg-preview.png";
+// Build absolute URL to public sample image
+const BASE =
+  (process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") as string) || "";
+const SAMPLE_IMG = `${BASE}/samples/dummy_post.png`;
 
 export default function ComposerPage() {
   const [caption, setCaption] = useState("Hello from Humanity 🚀");
@@ -86,13 +89,12 @@ export default function ComposerPage() {
     }
   }
 
-  // NEW: launch quick (server proxy calls run-now)
+  // Launch quick (server proxy calls run-now)
   async function launchQuick() {
     setSaving(true);
     setMessage(null);
     try {
       if (!imageUrl) throw new Error("Add an image (upload or paste URL)");
-      // for demo we use first selected platform; you can expand as needed
       const platform = platforms[0] || "INSTAGRAM";
       const res = await fetch("/api/demo/launch", {
         method: "POST",
@@ -186,7 +188,6 @@ export default function ComposerPage() {
             {saving ? "Working..." : "Schedule"}
           </button>
 
-          {/* NEW: Launch quick (demo) */}
           <button
             type="button"
             onClick={launchQuick}

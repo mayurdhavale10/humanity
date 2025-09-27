@@ -1,3 +1,4 @@
+// src/app/api/demo/launch/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -8,10 +9,14 @@ import PlannedPost from "@/models/PlannedPost";
 const DEMO_EMAIL = process.env.DEMO_USER_EMAIL || "demo@local.dev";
 const CRON_SECRET = process.env.CRON_SECRET || "";
 const BASE_URL =
-  process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") ||
-  "http://localhost:3000";
+  process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") || "http://localhost:3000";
 
 type Platform = "INSTAGRAM" | "LINKEDIN" | "X";
+
+function toAbsolute(u: string) {
+  if (/^https?:\/\//i.test(u)) return u;
+  return `${BASE_URL}${u.startsWith("/") ? "" : "/"}${u}`;
+}
 
 export async function OPTIONS() {
   return NextResponse.json({ ok: true });
@@ -31,7 +36,9 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
     const platform = String(body?.platform || "INSTAGRAM").toUpperCase() as Platform;
-    const imageUrl = String(body?.imageUrl || "").trim();
+
+    const rawUrl = String(body?.imageUrl || "").trim();
+    const imageUrl = toAbsolute(rawUrl); // <-- normalize to absolute
     const caption = String(body?.caption || "");
 
     if (!imageUrl || !/^https?:\/\/.+/i.test(imageUrl)) {
@@ -46,11 +53,11 @@ export async function POST(req: NextRequest) {
     // 1) create planned post scheduled for "now"
     const post = await PlannedPost.create({
       userEmail: DEMO_EMAIL,
-      platforms: [platform],          // keep uppercase to match enum
+      platforms: [platform],          // keep UPPERCASE to match enum
       status: "QUEUED",
       kind: "IMAGE",
       caption,
-      media: { imageUrl },
+      media: { imageUrl },            // <-- store the absolute URL
       scheduledAt: new Date(Date.now() - 1000), // due immediately
     });
 
