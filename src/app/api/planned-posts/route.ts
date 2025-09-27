@@ -6,49 +6,83 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongo";
 import PlannedPost, { IPlannedPost } from "@/models/PlannedPost";
 
-// Allow preflight or tools that probe OPTIONS
+// Allow preflight / health checks
 export async function OPTIONS() {
   return NextResponse.json({ ok: true });
 }
 
-// POST /api/planned-posts  -> create a planned post
+// POST /api/planned-posts -> create a planned post
 export async function POST(req: NextRequest) {
   try {
     await dbConnect();
-    const body = (await req.json()) as Partial<IPlannedPost>;
+    const body = (await req.json()) as Partial<IPlannedPost> & {
+      media?: { imageUrl?: string };
+      imageUrl?: string;
+      mediaUrl?: string;
+    };
 
-    if (!body?.userEmail || !body?.platforms?.length || !body?.kind || !body?.caption) {
-      return NextResponse.json(
-        { error: "Missing required fields: userEmail, platforms, kind, caption" },
-        { status: 400 }
-      );
+    // ---- Required fields ----
+    if (!body?.userEmail) {
+      return NextResponse.json({ error: "userEmail required" }, { status: 400 });
+    }
+    if (!Array.isArray(body?.platforms) || body.platforms.length === 0) {
+      return NextResponse.json({ error: "platforms required" }, { status: 400 });
+    }
+    if (!body?.kind) {
+      return NextResponse.json({ error: "kind required" }, { status: 400 });
+    }
+    if (!body?.caption) {
+      return NextResponse.json({ error: "caption required" }, { status: 400 });
+    }
+    if (!body?.scheduledAt) {
+      return NextResponse.json({ error: "scheduledAt required" }, { status: 400 });
     }
 
-    // Tight image URL validation for IMAGE kind
+    // ---- Parse scheduledAt (UI already sent UTC ISO) ----
+    const when = new Date(body.scheduledAt as any);
+    if (isNaN(when.getTime())) {
+      return NextResponse.json({ error: "scheduledAt invalid" }, { status: 400 });
+    }
+
+    // ---- Normalize platforms (cron matches lowercase) ----
+    const platforms = (body.platforms as string[]).map((p) => String(p).toLowerCase());
+
+    // ---- Media (for kind=IMAGE) ----
+    let imageUrl =
+      body.media?.imageUrl?.trim() ??
+      body.imageUrl?.trim() ??
+      body.mediaUrl?.trim() ??
+      "";
+
     if (body.kind === "IMAGE") {
-      const url = (body as any)?.media?.imageUrl?.trim?.();
-      if (
-        !url ||
-        !/^https?:\/\/.+\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(url)
-      ) {
+      if (!imageUrl) {
+        return NextResponse.json({ error: "media.imageUrl required for IMAGE" }, { status: 400 });
+      }
+      // strip stray trailing chars like ')' or spaces
+      imageUrl = imageUrl.replace(/[)\s]+$/g, "");
+      // basic sanity: https and common image extension (don’t be over-strict)
+      if (!/^https:\/\/.+/i.test(imageUrl) || !/\.(jpe?g|png|webp)(\?.*)?$/i.test(imageUrl)) {
         return NextResponse.json(
-          { error: "Provide a valid imageUrl (jpg/png/webp) over https" },
+          { error: "Provide a valid https image URL (jpg/png/webp)" },
           { status: 400 }
         );
       }
-      // strip stray trailing chars like ')' or spaces
-      (body as any).media = (body as any).media || {};
-      (body as any).media.imageUrl = url.replace(/[)\s]+$/g, "");
+    } else {
+      // extend for VIDEO/etc later
+      imageUrl = imageUrl || "";
     }
+
+    // ---- Status: default to SCHEDULED so cron can pick it up ----
+    const status = body.status ?? "SCHEDULED";
 
     const post = await PlannedPost.create({
       userEmail: body.userEmail,
-      platforms: body.platforms,
-      status: body.status ?? "DRAFT",
+      platforms,
+      status,
       kind: body.kind,
       caption: body.caption,
-      media: body.media ?? null,
-      scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
+      media: imageUrl ? { imageUrl } : body.media ?? null,
+      scheduledAt: when, // <-- store the UTC date directly
     });
 
     return NextResponse.json({ ok: true, post }, { status: 201 });
@@ -60,7 +94,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET /api/planned-posts?email=demo@local.dev  -> list posts for a user
+// GET /api/planned-posts?email=demo@local.dev -> list posts for a user
 export async function GET(req: NextRequest) {
   try {
     await dbConnect();

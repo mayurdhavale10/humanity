@@ -4,10 +4,11 @@ import { useState } from "react";
 
 type Platform = "INSTAGRAM"; // expand later: "X" | "LINKEDIN"
 
-function toUTCISOStringLocal(dateTimeLocal: string) {
-  // dateTimeLocal: "2025-09-26T15:00"
-  const d = new Date(dateTimeLocal);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString();
+// ✅ Correct: local "YYYY-MM-DDTHH:mm" -> UTC ISO without double-shift
+function toUtcIso(dateTimeLocal: string) {
+  // Example input: "2025-09-27T08:15" (interpreted as local time)
+  // new Date(local) makes a Date at local time; .toISOString() converts to UTC.
+  return new Date(dateTimeLocal).toISOString();
 }
 
 export default function ComposerPage() {
@@ -18,7 +19,9 @@ export default function ComposerPage() {
   const [when, setWhen] = useState<string>(() => {
     const d = new Date(Date.now() + 5 * 60 * 1000); // +5 min default
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+      d.getHours()
+    )}:${pad(d.getMinutes())}`;
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -34,9 +37,8 @@ export default function ComposerPage() {
       const res = await fetch("/api/media/upload", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Upload failed");
-      // Expect { ok:true, url:"https://..." }
       if (!data?.url) throw new Error("Upload did not return a URL");
-      setImageUrl(data.url);
+      setImageUrl(String(data.url));
       setMessage("✅ Uploaded");
     } catch (e: any) {
       setMessage(`❌ ${e.message || e}`);
@@ -46,9 +48,7 @@ export default function ComposerPage() {
   }
 
   function togglePlatform(p: Platform) {
-    setPlatforms((prev) =>
-      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
-    );
+    setPlatforms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
   }
 
   async function submit(e: React.FormEvent) {
@@ -56,17 +56,23 @@ export default function ComposerPage() {
     setSaving(true);
     setMessage(null);
     try {
-      if (!imageUrl) throw new Error("Add an image (upload or paste URL)");
-      const scheduledAt = toUTCISOStringLocal(when);
+      if (!imageUrl.trim()) throw new Error("Add an image (upload or paste URL)");
+      if (!when) throw new Error("Pick a schedule time");
+
+      // ✅ FIX: use correct UTC conversion (no manual offset math)
+      const scheduledAt = toUtcIso(when);
+
       const body = {
         userEmail: email,
-        platforms,
-        status: "QUEUED",
+        // normalize platforms to lowercase for backend matching
+        platforms: platforms.map((p) => p.toLowerCase()),
+        status: "SCHEDULED", // or "QUEUED" — either works with your cron
         kind: "IMAGE",
         caption,
-        media: { imageUrl },
-        scheduledAt,
+        media: { imageUrl: imageUrl.trim() },
+        scheduledAt, // stored as UTC ISO on the server
       };
+
       const res = await fetch("/api/planned-posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -74,8 +80,10 @@ export default function ComposerPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to create planned post");
+
       setMessage("✅ Scheduled! It will be picked up by the cron runner.");
-      setCaption("");
+      // Optional resets:
+      // setCaption("");
       // keep imageUrl so you can schedule multiple with same image if you wish
     } catch (e: any) {
       setMessage(`❌ ${e.message || e}`);
@@ -134,7 +142,7 @@ export default function ComposerPage() {
             onChange={(e) => setWhen(e.target.value)}
           />
           <p className="text-xs text-gray-500">
-            Stored as UTC automatically. Your local: {when.replace("T", " ")}.
+            Stored as <b>UTC</b> automatically. Your local: {when.replace("T", " ")}.
           </p>
         </div>
 
