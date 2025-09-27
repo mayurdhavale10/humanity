@@ -10,7 +10,16 @@ const GRAPH_V = "v19.0";
 const DEMO_EMAIL = process.env.DEMO_USER_EMAIL || "demo@local.dev";
 const CRON_SECRET = process.env.CRON_SECRET || "";
 
+// Preferred: fixed Page token + IG user id from env (avoid /me/accounts in prod)
+const IG_PAGE_ACCESS_TOKEN = process.env.IG_PAGE_ACCESS_TOKEN || "";
+const IG_USER_ID = process.env.IG_USER_ID || "";
+
 type ProviderDoc = { accessToken?: string } & Record<string, any>;
+
+function log(...args: any[]) {
+  // keep logs compact but informative in serverless logs
+  console.log("[CRON]", ...args);
+}
 
 async function fetchJson(url: string, init?: RequestInit) {
   const res = await fetch(url, init);
@@ -29,7 +38,8 @@ async function fetchJson(url: string, init?: RequestInit) {
   return body;
 }
 
-async function resolveIgContext(userToken: string) {
+async function resolveViaUserToken(userToken: string) {
+  // Fall-back path if you don't have IG_PAGE_ACCESS_TOKEN/IG_USER_ID in env
   const pagesResp = await fetchJson(
     `https://graph.facebook.com/${GRAPH_V}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(
       userToken
@@ -39,9 +49,7 @@ async function resolveIgContext(userToken: string) {
   const pages: Array<{ id: string; name: string; access_token: string }> =
     Array.isArray(pagesResp?.data) ? pagesResp.data : [];
 
-  if (!pages.length) {
-    throw new Error("No Facebook Pages found for this user.");
-  }
+  if (!pages.length) throw new Error("No Facebook Pages found for this user.");
 
   for (const p of pages) {
     const pageDetails = await fetchJson(
@@ -49,7 +57,7 @@ async function resolveIgContext(userToken: string) {
         p.access_token
       )}`
     );
-    const igId = pageDetails?.instagram_business_account?.id;
+    const igId = pageDetails?.instagram_business_account?.id as string | undefined;
     if (igId) {
       return {
         pageId: p.id,
@@ -60,7 +68,7 @@ async function resolveIgContext(userToken: string) {
     }
   }
 
-  throw new Error("Pages found but none linked to an Instagram Business account.");
+  throw new Error("Pages found, but none linked to an Instagram Business account.");
 }
 
 async function createContainerAndWait(
@@ -69,7 +77,7 @@ async function createContainerAndWait(
   imageUrl: string,
   caption: string
 ) {
-  // create container
+  // 1) create media container
   const creation = await fetchJson(
     `https://graph.facebook.com/${GRAPH_V}/${igId}/media`,
     {
@@ -82,10 +90,11 @@ async function createContainerAndWait(
       }).toString(),
     }
   );
+
   const creationId = creation?.id as string | undefined;
   if (!creationId) throw new Error("Failed to create media container.");
 
-  // poll until ready
+  // 2) poll until ready
   const maxTries = 6; // ~30s
   const delayMs = 5000;
   for (let i = 0; i < maxTries; i++) {
@@ -103,7 +112,7 @@ async function createContainerAndWait(
 }
 
 export async function GET(req: NextRequest) {
-  // simple auth
+  // 0) simple auth
   const secret = new URL(req.url).searchParams.get("secret");
   if (!CRON_SECRET || secret !== CRON_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -113,66 +122,104 @@ export async function GET(req: NextRequest) {
 
   const now = new Date();
 
-  // pick both SCHEDULED and QUEUED
+  // 1) Pick due posts for this user, status QUEUED/SCHEDULED, platform instagram (case-insensitive)
   const due = await PlannedPost.find({
     userEmail: DEMO_EMAIL,
     status: { $in: ["QUEUED", "SCHEDULED"] },
     scheduledAt: { $lte: now },
-    platforms: { $in: ["INSTAGRAM"] },
+    // platforms: case-insensitive match for "instagram"
+    platforms: { $elemMatch: { $regex: /^instagram$/i } },
   })
     .sort({ scheduledAt: 1 })
-    .limit(5)
+    .limit(10)
     .exec();
 
-  if (!due.length) return NextResponse.json({ ok: true, processed: {} });
+  if (!due.length) {
+    return NextResponse.json({ ok: true, processed: {} });
+  }
+
+  log("START", { now: now.toISOString(), picked: due.map(d => String(d._id)) });
 
   const processed: Record<string, any> = {};
 
-  for (const post of due) {
+  // 2) Resolve IG context once per run (env first, fallback to user token)
+  let pageAccessToken = IG_PAGE_ACCESS_TOKEN;
+  let instagramBusinessId = IG_USER_ID;
+
+  if (!pageAccessToken || !instagramBusinessId) {
+    const provider = await SocialProvider.findOne({
+      userEmail: DEMO_EMAIL,
+      platform: "INSTAGRAM",
+    }).lean<ProviderDoc>().exec();
+
+    const userToken = provider?.accessToken || "";
+    if (!userToken) {
+      // If we can’t resolve context at all, mark each post as FAILED and return
+      for (const post of due) {
+        post.status = "FAILED";
+        (post as any).error = "No Instagram credentials configured.";
+        (post as any).attempts = ((post as any).attempts || 0) + 1;
+        await post.save();
+        processed[String(post._id)] = { ok: false, error: "No Instagram credentials configured." };
+      }
+      return NextResponse.json({ ok: true, processed });
+    }
+
     try {
-      // validation
-      const imageUrl = post?.media?.imageUrl?.toString().trim();
-      if (!imageUrl || !/^https?:\/\/.+/i.test(imageUrl) || /[)\s]+$/.test(imageUrl)) {
-        throw new Error("Invalid media.imageUrl");
+      const ctx = await resolveViaUserToken(userToken);
+      pageAccessToken = ctx.pageAccessToken;
+      instagramBusinessId = ctx.instagramBusinessId;
+    } catch (e: any) {
+      // Bubble the same clear error to each post
+      for (const post of due) {
+        post.status = "FAILED";
+        (post as any).error = String(e?.message || e);
+        (post as any).attempts = ((post as any).attempts || 0) + 1;
+        await post.save();
+        processed[String(post._id)] = { ok: false, error: (post as any).error };
+      }
+      return NextResponse.json({ ok: true, processed });
+    }
+  }
+
+  // 3) Publish each due post with robust status flipping
+  for (const post of due) {
+    const idStr = String(post._id);
+    try {
+      // Validate media URL field (accept both nested and flat)
+      const mediaUrl =
+        (post as any)?.media?.imageUrl?.toString().trim() ||
+        (post as any)?.mediaUrl?.toString().trim() ||
+        (post as any)?.imageUrl?.toString().trim();
+
+      if (!mediaUrl || !/^https?:\/\/.+/i.test(mediaUrl)) {
+        throw new Error("Invalid media URL on post");
       }
 
-      // fetch provider (typed)
-      const provider = (await SocialProvider.findOne({
-        userEmail: DEMO_EMAIL,
-        platform: "INSTAGRAM",
-      })
-        .lean<ProviderDoc>()
-        .exec()) as ProviderDoc | null;
-
-      if (!provider?.accessToken) throw new Error("No Instagram user token saved.");
-
-      // resolve page token + ig id
-      const ctx = await resolveIgContext(provider.accessToken);
-
-      // create container and wait
+      // Create container, wait, then publish
       const creationId = await createContainerAndWait(
-        ctx.instagramBusinessId,
-        ctx.pageAccessToken,
-        imageUrl,
-        post.caption || ""
+        instagramBusinessId,
+        pageAccessToken,
+        mediaUrl,
+        (post as any).caption || ""
       );
 
-      // publish
       const publish = await fetchJson(
-        `https://graph.facebook.com/${GRAPH_V}/${ctx.instagramBusinessId}/media_publish`,
+        `https://graph.facebook.com/${GRAPH_V}/${instagramBusinessId}/media_publish`,
         {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({
             creation_id: String(creationId),
-            access_token: ctx.pageAccessToken,
+            access_token: pageAccessToken,
           }).toString(),
         }
       );
 
-      // update (results must match your schema)
+      // Success → mark PUBLISHED
       post.status = "PUBLISHED";
       post.publishedAt = new Date();
+      (post as any).error = null;
       (post as any).attempts = ((post as any).attempts || 0) + 1;
 
       const results: any[] = Array.isArray((post as any).results)
@@ -180,7 +227,7 @@ export async function GET(req: NextRequest) {
         : [];
 
       results.push({
-        platform: "INSTAGRAM",
+        platform: "instagram",
         remoteId: publish?.id,
         postedAt: new Date(),
       });
@@ -188,19 +235,23 @@ export async function GET(req: NextRequest) {
       (post as any).results = results;
       await post.save();
 
-      processed[String(post._id)] = { ok: true, publishId: publish?.id };
+      processed[idStr] = { ok: true, publishId: publish?.id };
+      log("PUBLISH_OK", { id: idStr, creationId: creationId, mediaUrl });
     } catch (err: any) {
+      // Failure → mark FAILED and carry the reason
       post.status = "FAILED";
       post.publishedAt = new Date();
       (post as any).error = String(err?.message || err);
       (post as any).attempts = ((post as any).attempts || 0) + 1;
-
-      // keep results shape strict: don’t push `{ at, error }`
       await post.save();
 
-      processed[String(post._id)] = { ok: false, error: (post as any).error };
+      processed[idStr] = { ok: false, error: (post as any).error };
+      console.error("[CRON] PUBLISH_FAIL", { id: idStr, error: (post as any).error });
+      // continue to next post
     }
   }
+
+  log("END", { processedKeys: Object.keys(processed) });
 
   return NextResponse.json({ ok: true, processed });
 }
