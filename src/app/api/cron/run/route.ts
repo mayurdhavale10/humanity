@@ -21,12 +21,17 @@ async function fetchJson(url: string, init?: RequestInit) {
   const res = await fetch(url, init);
   const raw = await res.text();
   let body: any;
-  try { body = JSON.parse(raw); } catch { body = raw; }
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    body = raw;
+  }
   if (!res.ok) {
     console.error("📉 Graph error", { url, status: res.status, body });
-    const msg = typeof body === "object" && body?.error?.message
-      ? body.error.message
-      : `HTTP ${res.status}`;
+    const msg =
+      typeof body === "object" && body?.error?.message
+        ? body.error.message
+        : `HTTP ${res.status}`;
     throw new Error(msg);
   }
   return body;
@@ -34,7 +39,9 @@ async function fetchJson(url: string, init?: RequestInit) {
 
 async function resolveViaUserToken(userToken: string) {
   const pagesResp = await fetchJson(
-    `https://graph.facebook.com/${GRAPH_V}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(userToken)}`
+    `https://graph.facebook.com/${GRAPH_V}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(
+      userToken
+    )}`
   );
   const pages: Array<{ id: string; name: string; access_token: string }> =
     Array.isArray(pagesResp?.data) ? pagesResp.data : [];
@@ -42,7 +49,9 @@ async function resolveViaUserToken(userToken: string) {
 
   for (const p of pages) {
     const pageDetails = await fetchJson(
-      `https://graph.facebook.com/${GRAPH_V}/${p.id}?fields=instagram_business_account&access_token=${encodeURIComponent(p.access_token)}`
+      `https://graph.facebook.com/${GRAPH_V}/${p.id}?fields=instagram_business_account&access_token=${encodeURIComponent(
+        p.access_token
+      )}`
     );
     const igId = pageDetails?.instagram_business_account?.id as string | undefined;
     if (igId) {
@@ -78,10 +87,13 @@ async function createContainerAndWait(
   const creationId = creation?.id as string | undefined;
   if (!creationId) throw new Error("Failed to create media container.");
 
-  const maxTries = 6, delayMs = 5000;
+  const maxTries = 6,
+    delayMs = 5000;
   for (let i = 0; i < maxTries; i++) {
     const status = await fetchJson(
-      `https://graph.facebook.com/${GRAPH_V}/${creationId}?fields=status_code,status&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/${GRAPH_V}/${creationId}?fields=status_code,status&access_token=${encodeURIComponent(
+        pageToken
+      )}`
     );
     const code = status?.status_code;
     if (code === "FINISHED") return creationId;
@@ -102,12 +114,10 @@ export async function GET(req: NextRequest) {
 
   await dbConnect();
 
-  const now = new Date();
-
-  // Pick due posts (any user), status QUEUED/SCHEDULED, platform contains "instagram" (case-insensitive)
+  // pick due posts (no email filter)
   const due = await PlannedPost.find({
     status: { $in: ["QUEUED", "SCHEDULED"] },
-    scheduledAt: { $lte: now },
+    scheduledAt: { $lte: new Date() },
     platforms: { $elemMatch: { $regex: /^instagram$/i } },
   })
     .sort({ scheduledAt: 1 })
@@ -116,9 +126,11 @@ export async function GET(req: NextRequest) {
 
   if (!due.length) return NextResponse.json({ ok: true, processed: {} });
 
-  log("START", { now: now.toISOString(), picked: due.map(d => String(d._id)) });
+  log("START", {
+    now: new Date().toISOString(),
+    picked: due.map((d) => String(d._id)),
+  });
 
-  // Resolve IG context once (env first; fallback to user token per post-owner if needed)
   let pageAccessToken = IG_PAGE_ACCESS_TOKEN;
   let instagramBusinessId = IG_USER_ID;
 
@@ -126,8 +138,15 @@ export async function GET(req: NextRequest) {
 
   for (const post of due) {
     const idStr = String(post._id);
+
+    // optional: skip in case someone flips it mid-run
+    if ((post as any).status === "PUBLISHED") {
+      processed[idStr] = { ok: true, skipped: "already published" };
+      continue;
+    }
+
     try {
-      // Decide tokens for this iteration
+      // Decide tokens this iteration
       let pageToken = pageAccessToken;
       let igId = instagramBusinessId;
 
@@ -135,7 +154,9 @@ export async function GET(req: NextRequest) {
         const provider = await SocialProvider.findOne({
           userEmail: (post as any).userEmail,
           platform: "INSTAGRAM",
-        }).lean<ProviderDoc>().exec();
+        })
+          .lean<ProviderDoc>()
+          .exec();
 
         const userToken = provider?.accessToken || "";
         if (!userToken) throw new Error("No Instagram credentials configured.");
@@ -174,14 +195,21 @@ export async function GET(req: NextRequest) {
         }
       );
 
-      // Success → flip status
+      // ✅ After successful publish, flip status and append results (enum-safe)
       post.status = "PUBLISHED";
       post.publishedAt = new Date();
       (post as any).error = null;
       (post as any).attempts = ((post as any).attempts || 0) + 1;
 
-      const results: any[] = Array.isArray((post as any).results) ? (post as any).results : [];
-      results.push({ platform: "instagram", remoteId: publish?.id, postedAt: new Date() });
+      const results: any[] = Array.isArray((post as any).results)
+        ? (post as any).results
+        : [];
+      results.push({
+        platform: "INSTAGRAM", // MUST match schema enum (not "instagram")
+        remoteId: publish?.id,
+        postedAt: new Date(),
+        source: "cron",
+      });
       (post as any).results = results;
 
       await post.save();
