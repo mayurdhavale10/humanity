@@ -12,7 +12,7 @@ const CRON_SECRET = process.env.CRON_SECRET || "";
 const IG_PAGE_ACCESS_TOKEN = process.env.IG_PAGE_ACCESS_TOKEN || "";
 const IG_USER_ID = process.env.IG_USER_ID || "";
 
-type ProviderDoc = { accessToken?: string } & Record<string, any>;
+type ProviderDoc = { accessToken?: string; meta?: any } & Record<string, any>;
 
 async function fetchJson(url: string, init?: RequestInit) {
   const res = await fetch(url, init);
@@ -21,26 +21,40 @@ async function fetchJson(url: string, init?: RequestInit) {
   try { body = JSON.parse(raw); } catch { body = raw; }
   if (!res.ok) {
     console.error("📉 Graph error", { url, status: res.status, body });
-    const msg = typeof body === "object" && body?.error?.message ? body.error.message : `HTTP ${res.status}`;
+    const msg =
+      typeof body === "object" && body?.error?.message
+        ? body.error.message
+        : `HTTP ${res.status}`;
     throw new Error(msg);
   }
   return body;
 }
 
+// ---------- Instagram helpers ----------
 async function resolveViaUserToken(userToken: string) {
   const pagesResp = await fetchJson(
-    `https://graph.facebook.com/${GRAPH_V}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(userToken)}`
+    `https://graph.facebook.com/${GRAPH_V}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(
+      userToken
+    )}`
   );
-  const pages: Array<{ id: string; name: string; access_token: string }> = Array.isArray(pagesResp?.data) ? pagesResp.data : [];
+  const pages: Array<{ id: string; name: string; access_token: string }> =
+    Array.isArray(pagesResp?.data) ? pagesResp.data : [];
   if (!pages.length) throw new Error("No Facebook Pages found for this user.");
 
   for (const p of pages) {
     const pageDetails = await fetchJson(
-      `https://graph.facebook.com/${GRAPH_V}/${p.id}?fields=instagram_business_account&access_token=${encodeURIComponent(p.access_token)}`
+      `https://graph.facebook.com/${GRAPH_V}/${p.id}?fields=instagram_business_account&access_token=${encodeURIComponent(
+        p.access_token
+      )}`
     );
     const igId = pageDetails?.instagram_business_account?.id as string | undefined;
     if (igId) {
-      return { pageId: p.id, pageName: p.name, pageAccessToken: p.access_token, instagramBusinessId: igId };
+      return {
+        pageId: p.id,
+        pageName: p.name,
+        pageAccessToken: p.access_token,
+        instagramBusinessId: igId,
+      };
     }
   }
   throw new Error("Pages found, but none linked to an Instagram Business account.");
@@ -68,12 +82,14 @@ async function createContainerAndWait(
   const creationId = creation?.id as string | undefined;
   if (!creationId) throw new Error("Failed to create media container.");
 
-  // Poll until ready (~30s max)
+  // Poll until FINISHED (≤ ~30s)
   const maxTries = 6;
   const delayMs = 5000;
   for (let i = 0; i < maxTries; i++) {
     const status = await fetchJson(
-      `https://graph.facebook.com/${GRAPH_V}/${creationId}?fields=status_code,status&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/${GRAPH_V}/${creationId}?fields=status_code,status&access_token=${encodeURIComponent(
+        pageToken
+      )}`
     );
     const code = status?.status_code; // FINISHED | IN_PROGRESS | ERROR
     if (code === "FINISHED") return creationId;
@@ -83,9 +99,10 @@ async function createContainerAndWait(
   throw new Error("Media container is not ready yet.");
 }
 
+// ---------- Handler ----------
 export async function POST(
   req: NextRequest,
-  ctx: { params: Promise<{ id: string }> } // Next 15 typegen quirk: params as Promise
+  ctx: { params: Promise<{ id: string }> } // Next 15: params is Promise
 ) {
   // Auth (query ?secret= or Bearer)
   const secret =
@@ -97,7 +114,7 @@ export async function POST(
 
   const { id } = await ctx.params;
 
-  // ✅ ObjectId validation to avoid CastError 500s
+  // ✅ Validate ObjectId (avoid CastError 500s)
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return NextResponse.json({ error: "Invalid post id" }, { status: 400 });
   }
@@ -107,85 +124,135 @@ export async function POST(
   const post = await PlannedPost.findById(id);
   if (!post) return NextResponse.json({ error: "Post not found" }, { status: 404 });
 
-  // ✅ Idempotency guard (skip if already published)
+  // ✅ Idempotency: skip if already published
   if ((post as any).status === "PUBLISHED") {
     return NextResponse.json({ ok: true, skipped: "already published", postId: String(post._id) });
   }
 
-  // Validate platform target
+  // Platforms and common fields
   const platforms = ((post as any).platforms || []).map((p: string) => String(p).toLowerCase());
-  if (!platforms.includes("instagram")) {
-    return NextResponse.json({ error: "Post is not targeted at Instagram" }, { status: 400 });
-  }
+  const wantsInstagram = platforms.includes("instagram");
+  const wantsLinkedIn  = platforms.includes("linkedin");
 
-  // Resolve media URL shape
   const mediaUrl =
     (post as any)?.media?.imageUrl?.toString().trim() ||
     (post as any)?.mediaUrl?.toString().trim() ||
     (post as any)?.imageUrl?.toString().trim();
-  if (!mediaUrl || !/^https?:\/\/.+/i.test(mediaUrl)) {
-    return NextResponse.json({ error: "Invalid or missing media URL on post" }, { status: 400 });
+  const caption = (post as any).caption || "";
+
+  // If neither supported platform is selected
+  if (!wantsInstagram && !wantsLinkedIn) {
+    return NextResponse.json({ error: "Post is not targeted at a supported platform" }, { status: 400 });
   }
 
   try {
-    // Prefer env Page token + IG user id; fallback to user's saved token
-    let pageAccessToken = IG_PAGE_ACCESS_TOKEN;
-    let instagramBusinessId = IG_USER_ID;
+    const publishIds: Record<string, string> = {};
 
-    if (!pageAccessToken || !instagramBusinessId) {
-      const provider = await SocialProvider.findOne({
+    // ---------- LinkedIn branch (optional image; text-only allowed) ----------
+    if (wantsLinkedIn) {
+      const liProv = await SocialProvider.findOne({
         userEmail: (post as any).userEmail,
-        platform: "INSTAGRAM",
-      })
-        .lean<ProviderDoc>()
-        .exec();
+        platform: "LINKEDIN",
+      }).lean<ProviderDoc>().exec();
 
-      const userToken = provider?.accessToken || "";
-      if (!userToken) throw new Error("No Instagram credentials configured.");
+      if (!liProv?.accessToken || !liProv?.meta?.actorUrn) {
+        return NextResponse.json({ error: "LinkedIn not connected for this user" }, { status: 400 });
+      }
 
-      const ctxResolved = await resolveViaUserToken(userToken);
-      pageAccessToken = ctxResolved.pageAccessToken;
-      instagramBusinessId = ctxResolved.instagramBusinessId;
+      const { publishToLinkedIn } = await import("@/lib/publishers/linkedin");
+      const { id: liId } = await publishToLinkedIn({
+        accessToken: liProv.accessToken as string,
+        actorUrn: liProv.meta.actorUrn as string,
+        caption,
+        imageUrl: mediaUrl || undefined, // LinkedIn supports text-only too
+      });
+
+      // Append result (UPPERCASE enum)
+      const resultsLI: any[] = Array.isArray((post as any).results) ? (post as any).results : [];
+      resultsLI.push({
+        platform: "LINKEDIN",
+        remoteId: liId,
+        postedAt: new Date(),
+        source: "run-now",
+      });
+      (post as any).results = resultsLI;
+      (post as any).attempts = ((post as any).attempts || 0) + 1;
+      (post as any).error = null;
+
+      publishIds.linkedin = liId;
     }
 
-    // Create container → wait → publish
-    const creationId = await createContainerAndWait(
-      instagramBusinessId,
-      pageAccessToken,
-      mediaUrl,
-      (post as any).caption || ""
-    );
-
-    const publish = await fetchJson(
-      `https://graph.facebook.com/${GRAPH_V}/${instagramBusinessId}/media_publish`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          creation_id: String(creationId),
-          access_token: pageAccessToken,
-        }).toString(),
+    // ---------- Instagram branch (requires image) ----------
+    if (wantsInstagram) {
+      if (!mediaUrl || !/^https?:\/\/.+/i.test(mediaUrl)) {
+        return NextResponse.json({ error: "Invalid or missing media URL on post (required for Instagram)" }, { status: 400 });
       }
-    );
 
-    // ✅ Success → mark PUBLISHED and append results (enum-safe)
+      // Prefer env Page token + IG user id; fallback to user's saved token
+      let pageAccessToken = IG_PAGE_ACCESS_TOKEN;
+      let instagramBusinessId = IG_USER_ID;
+
+      if (!pageAccessToken || !instagramBusinessId) {
+        const provider = await SocialProvider.findOne({
+          userEmail: (post as any).userEmail,
+          platform: "INSTAGRAM",
+        }).lean<ProviderDoc>().exec();
+
+        const userToken = provider?.accessToken || "";
+        if (!userToken) throw new Error("No Instagram credentials configured.");
+
+        const ctxResolved = await resolveViaUserToken(userToken);
+        pageAccessToken = ctxResolved.pageAccessToken;
+        instagramBusinessId = ctxResolved.instagramBusinessId;
+      }
+
+      // Create container → wait → publish
+      const creationId = await createContainerAndWait(
+        instagramBusinessId,
+        pageAccessToken,
+        mediaUrl,
+        caption
+      );
+
+      const publish = await fetchJson(
+        `https://graph.facebook.com/${GRAPH_V}/${instagramBusinessId}/media_publish`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            creation_id: String(creationId),
+            access_token: pageAccessToken,
+          }).toString(),
+        }
+      );
+
+      const resultsIG: any[] = Array.isArray((post as any).results) ? (post as any).results : [];
+      resultsIG.push({
+        platform: "INSTAGRAM", // schema enum is uppercase
+        remoteId: publish?.id,
+        postedAt: new Date(),
+        source: "run-now",
+      });
+      (post as any).results = resultsIG;
+      (post as any).attempts = ((post as any).attempts || 0) + 1;
+      (post as any).error = null;
+
+      publishIds.instagram = publish?.id;
+    }
+
+    // ✅ Finalize the post once at least one platform was posted
     post.status = "PUBLISHED";
     post.publishedAt = new Date();
-    (post as any).error = null;
-    (post as any).attempts = ((post as any).attempts || 0) + 1;
-
-    const results: any[] = Array.isArray((post as any).results) ? (post as any).results : [];
-    results.push({
-      platform: "INSTAGRAM",  // schema enum expects uppercase
-      remoteId: publish?.id,
-      postedAt: new Date(),
-      source: "run-now",
-    });
-    (post as any).results = results;
-
     await post.save();
 
-    return NextResponse.json({ ok: true, publishId: publish?.id });
+    // Return both ids if both were targeted; otherwise single
+    if (publishIds.linkedin && publishIds.instagram) {
+      return NextResponse.json({ ok: true, publishIds });
+    }
+    const single =
+      publishIds.linkedin ?? publishIds.instagram ?? undefined;
+    return NextResponse.json({ ok: true, publishId: single, publishIds });
+
   } catch (e: any) {
     // Failure → mark FAILED and surface reason
     (post as any).status = "FAILED";

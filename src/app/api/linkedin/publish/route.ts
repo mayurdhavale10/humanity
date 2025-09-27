@@ -5,11 +5,11 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongo";
 import SocialProvider from "@/models/SocialProvider";
-import { publishLinkedIn } from "@/lib/publishers/linkedin";
+import { publishToLinkedIn } from "@/lib/publishers/linkedin";
 
 type ProviderDoc = {
   accessToken?: string;
-  actorUrn?: string; // "urn:li:person:xxxx"
+  meta?: { actorUrn?: string };
 } & Record<string, any>;
 
 export async function OPTIONS() {
@@ -19,7 +19,7 @@ export async function OPTIONS() {
 /**
  * POST /api/linkedin/publish
  * Body: { userEmail: string, imageUrl: string, caption?: string }
- * Uses saved SocialProvider { platform:"LINKEDIN", accessToken, actorUrn }
+ * Uses saved SocialProvider { platform:"LINKEDIN", accessToken, meta.actorUrn }
  */
 export async function POST(req: NextRequest) {
   try {
@@ -37,7 +37,10 @@ export async function POST(req: NextRequest) {
       );
     }
     if (!/^https?:\/\/.+/i.test(imageUrl)) {
-      return NextResponse.json({ error: "imageUrl must be https URL" }, { status: 400 });
+      return NextResponse.json(
+        { error: "imageUrl must be an absolute http(s) URL" },
+        { status: 400 }
+      );
     }
 
     const li = await SocialProvider.findOne({
@@ -47,21 +50,25 @@ export async function POST(req: NextRequest) {
       .lean<ProviderDoc>()
       .exec();
 
-    if (!li?.accessToken || !li?.actorUrn) {
+    const accessToken = li?.accessToken;
+    const actorUrn = li?.meta?.actorUrn;
+
+    if (!accessToken || !actorUrn) {
       return NextResponse.json(
         { error: "LinkedIn not connected for this user (missing token or actorUrn)" },
         { status: 400 }
       );
     }
 
-    const { remoteId } = await publishLinkedIn({
-      accessToken: li.accessToken!,
-      actorUrn: li.actorUrn!,
-      imageUrl,
+    // Publish (image optional, but we’re requiring it here)
+    const { id } = await publishToLinkedIn({
+      accessToken,
+      actorUrn,
       caption,
+      imageUrl,
     });
 
-    return NextResponse.json({ ok: true, remoteId });
+    return NextResponse.json({ ok: true, remoteId: id });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || String(e) },

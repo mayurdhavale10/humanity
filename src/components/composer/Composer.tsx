@@ -9,7 +9,7 @@ import PlatformToggles from "./PlatformToggles";
 import ActionButtons from "./ActionButtons";
 import StatusMessage from "./StatusMessage";
 
-export type Platform = "INSTAGRAM";
+export type Platform = "INSTAGRAM" | "LINKEDIN" | "X";
 
 function toUTCISOStringLocal(dateTimeLocal: string) {
   const d = new Date(dateTimeLocal);
@@ -73,7 +73,7 @@ export default function Composer() {
       const scheduledAt = toUTCISOStringLocal(when);
       const body = {
         userEmail: email,
-        platforms,
+        platforms, // <-- stays UPPERCASE as selected
         status: "QUEUED",
         kind: "IMAGE",
         caption,
@@ -118,35 +118,35 @@ export default function Composer() {
   }
 
   return (
-    <main 
-      style={{ 
-        maxWidth: '1200px', 
-        margin: '0 auto', 
-        padding: '32px 24px',
-        minHeight: '100vh',
-        backgroundColor: '#8B6B7A'
+    <main
+      style={{
+        maxWidth: "1200px",
+        margin: "0 auto",
+        padding: "32px 24px",
+        minHeight: "100vh",
+        backgroundColor: "#8B6B7A",
       }}
     >
       {/* Header */}
-      <div style={{ marginBottom: '32px' }}>
-        <h1 
+      <div style={{ marginBottom: "32px" }}>
+        <h1
           style={{
-            fontSize: 'clamp(28px, 4vw, 48px)',
+            fontSize: "clamp(28px, 4vw, 48px)",
             fontWeight: 900,
-            color: '#FFFFFF',
-            letterSpacing: '-0.02em',
-            textShadow: '0 2px 4px rgba(0,0,0,0.8)',
-            fontFamily: 'system-ui, -apple-system, sans-serif',
+            color: "#FFFFFF",
+            letterSpacing: "-0.02em",
+            textShadow: "0 2px 4px rgba(0,0,0,0.8)",
+            fontFamily: "system-ui, -apple-system, sans-serif",
             margin: 0,
           }}
         >
           Compose Your Post
         </h1>
-        <p 
+        <p
           style={{
-            fontSize: '16px',
-            color: 'rgba(255,255,255,0.8)',
-            margin: '8px 0 0 0',
+            fontSize: "16px",
+            color: "rgba(255,255,255,0.8)",
+            margin: "8px 0 0 0",
             fontWeight: 500,
           }}
         >
@@ -155,16 +155,17 @@ export default function Composer() {
       </div>
 
       {/* Main Form Container */}
-      <form 
-        onSubmit={submit} 
+      <form
+        onSubmit={submit}
         style={{
-          backgroundColor: '#B5979A',
-          borderRadius: '12px',
-          padding: '32px',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          display: 'grid',
-          gap: '24px',
+          backgroundColor: "#B5979A",
+          borderRadius: "12px",
+          padding: "32px",
+          boxShadow:
+            "0 10px 30px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          display: "grid",
+          gap: "24px",
         }}
       >
         <ImageUpload
@@ -174,15 +175,9 @@ export default function Composer() {
           uploading={uploading}
         />
 
-        <CaptionEditor
-          caption={caption}
-          onCaptionChange={setCaption}
-        />
+        <CaptionEditor caption={caption} onCaptionChange={setCaption} />
 
-        <ScheduleInput
-          when={when}
-          onWhenChange={setWhen}
-        />
+        <ScheduleInput when={when} onWhenChange={setWhen} />
 
         <PlatformToggles
           platforms={platforms}
@@ -200,23 +195,35 @@ export default function Composer() {
       </form>
 
       {/* Developer Tip */}
-      <div 
+      <div
         style={{
-          marginTop: '24px',
-          padding: '16px',
-          backgroundColor: 'rgba(255,255,255,0.1)',
-          borderRadius: '8px',
-          fontSize: '14px',
-          color: 'rgba(255,255,255,0.7)',
+          marginTop: "24px",
+          padding: "16px",
+          backgroundColor: "rgba(255,255,255,0.1)",
+          borderRadius: "8px",
+          fontSize: "14px",
+          color: "rgba(255,255,255,0.7)",
           fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", monospace',
         }}
       >
         <strong>Tip:</strong> Watch{" "}
-        <code style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '4px' }}>
+        <code
+          style={{
+            backgroundColor: "rgba(0,0,0,0.2)",
+            padding: "2px 6px",
+            borderRadius: "4px",
+          }}
+        >
           /api/planned-posts?email=demo@local.dev
         </code>{" "}
         and{" "}
-        <code style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '4px' }}>
+        <code
+          style={{
+            backgroundColor: "rgba(0,0,0,0.2)",
+            padding: "2px 6px",
+            borderRadius: "4px",
+          }}
+        >
           /api/cron/run?secret=***
         </code>{" "}
         logs to see QUEUED ➜ PUBLISHED.

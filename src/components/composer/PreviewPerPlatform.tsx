@@ -10,77 +10,99 @@ interface PreviewPerPlatformProps {
   isVisible?: boolean;
 }
 
-const platformPreviews = {
-  INSTAGRAM: {
-    name: 'Instagram',
-    color: '#E4405F',
-    aspectRatio: '1:1',
-    maxCaptionLength: 2200,
-    features: ['Image', 'Caption', 'Hashtags', '@mentions'],
-  }
+type PlatformConfig = {
+  name: string;
+  color: string;
+  aspectRatio: string;        // CSS aspect-ratio format like "1 / 1"
+  maxCaptionLength: number;
+  features: string[];
 };
 
-export default function PreviewPerPlatform({ 
-  platforms, 
-  imageUrl, 
-  caption, 
-  isVisible = true 
+const platformPreviews: Record<Platform, PlatformConfig> = {
+  INSTAGRAM: {
+    name: "Instagram",
+    color: "#E4405F",
+    aspectRatio: "1 / 1",     // square
+    maxCaptionLength: 2200,
+    features: ["Image", "Caption", "Hashtags", "@mentions"],
+  },
+  LINKEDIN: {
+    name: "LinkedIn",
+    color: "#0A66C2",
+    aspectRatio: "1 / 1",     // LinkedIn supports multiple; square works well
+    maxCaptionLength: 3000,
+    features: ["Image", "Text", "Links"],
+  },
+  X: {
+    name: "X (Twitter)",
+    color: "#111111",
+    aspectRatio: "16 / 9",
+    maxCaptionLength: 280,    // basic preview constraint
+    features: ["Image", "Text", "Hashtags", "@mentions"],
+  },
+};
+
+export default function PreviewPerPlatform({
+  platforms,
+  imageUrl,
+  caption,
+  isVisible = true,
 }: PreviewPerPlatformProps) {
   if (!isVisible || platforms.length === 0) return null;
 
   const formatCaption = (text: string, platform: Platform) => {
     const maxLength = platformPreviews[platform].maxCaptionLength;
     if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength - 3) + '...';
+    return text.substring(0, maxLength - 3) + "...";
   };
 
   const getHashtags = (text: string) => {
     const hashtags = text.match(/#[\w]+/g) || [];
-    return hashtags.slice(0, 5); // Limit display to 5 hashtags
+    return hashtags.slice(0, 5);
   };
 
   const getMentions = (text: string) => {
     const mentions = text.match(/@[\w]+/g) || [];
-    return mentions.slice(0, 3); // Limit display to 3 mentions
+    return mentions.slice(0, 3);
   };
 
   return (
-    <div style={{ display: 'grid', gap: '24px' }}>
+    <div style={{ display: "grid", gap: "24px" }}>
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
         }}
       >
         <h3
           style={{
-            fontSize: '18px',
+            fontSize: "18px",
             fontWeight: 700,
-            color: '#FFFFFF',
-            textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+            color: "#FFFFFF",
+            textShadow: "0 1px 2px rgba(0,0,0,0.6)",
             margin: 0,
           }}
         >
           Platform Previews
         </h3>
-        
+
         <div
           style={{
-            fontSize: '12px',
-            color: 'rgba(255,255,255,0.6)',
+            fontSize: "12px",
+            color: "rgba(255,255,255,0.6)",
             fontWeight: 500,
           }}
         >
-          {platforms.length} preview{platforms.length !== 1 ? 's' : ''}
+          {platforms.length} preview{platforms.length !== 1 ? "s" : ""}
         </div>
       </div>
 
-      <div 
-        style={{ 
-          display: 'grid', 
-          gap: '20px',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))'
+      <div
+        style={{
+          display: "grid",
+          gap: "20px",
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
         }}
       >
         {platforms.map((platform) => {
@@ -93,37 +115,37 @@ export default function PreviewPerPlatform({
             <div
               key={platform}
               style={{
-                backgroundColor: 'rgba(255,255,255,0.08)',
-                borderRadius: '12px',
-                overflow: 'hidden',
+                backgroundColor: "rgba(255,255,255,0.08)",
+                borderRadius: "12px",
+                overflow: "hidden",
                 border: `2px solid ${config.color}40`,
-                boxShadow: '0 8px 20px rgba(0,0,0,0.2)',
+                boxShadow: "0 8px 20px rgba(0,0,0,0.2)",
               }}
             >
               {/* Platform Header */}
               <div
                 style={{
-                  padding: '12px 16px',
+                  padding: "12px 16px",
                   backgroundColor: `${config.color}20`,
                   borderBottom: `1px solid ${config.color}30`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
                 }}
               >
                 <div
                   style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "50%",
                     backgroundColor: config.color,
                   }}
                 />
                 <span
                   style={{
-                    fontSize: '14px',
+                    fontSize: "14px",
                     fontWeight: 700,
-                    color: '#FFFFFF',
+                    color: "#FFFFFF",
                   }}
                 >
                   {config.name} Preview
@@ -131,28 +153,28 @@ export default function PreviewPerPlatform({
               </div>
 
               {/* Mock Post Content */}
-              <div style={{ padding: '16px' }}>
+              <div style={{ padding: "16px" }}>
                 {/* Mock Profile Section */}
                 <div
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    marginBottom: '12px',
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    marginBottom: "12px",
                   }}
                 >
                   <div
                     style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "50%",
                       backgroundColor: config.color,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '14px',
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "14px",
                       fontWeight: 700,
-                      color: '#FFFFFF',
+                      color: "#FFFFFF",
                     }}
                   >
                     H
@@ -160,17 +182,17 @@ export default function PreviewPerPlatform({
                   <div>
                     <div
                       style={{
-                        fontSize: '14px',
+                        fontSize: "14px",
                         fontWeight: 700,
-                        color: '#FFFFFF',
+                        color: "#FFFFFF",
                       }}
                     >
                       humanity_founders
                     </div>
                     <div
                       style={{
-                        fontSize: '12px',
-                        color: 'rgba(255,255,255,0.6)',
+                        fontSize: "12px",
+                        color: "rgba(255,255,255,0.6)",
                       }}
                     >
                       Verified
@@ -182,61 +204,57 @@ export default function PreviewPerPlatform({
                 {imageUrl && (
                   <div
                     style={{
-                      width: '100%',
+                      width: "100%",
                       aspectRatio: config.aspectRatio,
-                      backgroundColor: 'rgba(0,0,0,0.3)',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      marginBottom: '12px',
-                      position: 'relative',
+                      backgroundColor: "rgba(0,0,0,0.3)",
+                      borderRadius: "8px",
+                      overflow: "hidden",
+                      marginBottom: "12px",
+                      position: "relative",
                     }}
                   >
                     <img
                       src={imageUrl}
                       alt="Post preview"
                       style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
                       }}
                       onError={(e) => {
-                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.style.display = "none";
                       }}
                     />
                     <div
                       style={{
-                        position: 'absolute',
-                        bottom: '8px',
-                        right: '8px',
-                        padding: '4px 8px',
-                        backgroundColor: 'rgba(0,0,0,0.7)',
-                        borderRadius: '4px',
-                        fontSize: '10px',
-                        color: '#FFFFFF',
+                        position: "absolute",
+                        bottom: "8px",
+                        right: "8px",
+                        padding: "4px 8px",
+                        backgroundColor: "rgba(0,0,0,0.7)",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        color: "#FFFFFF",
                         fontWeight: 600,
                       }}
                     >
-                      {config.aspectRatio}
+                      {config.aspectRatio.replace(" / ", ":")}
                     </div>
                   </div>
                 )}
 
                 {/* Caption Preview */}
                 {formattedCaption && (
-                  <div
-                    style={{
-                      marginBottom: '12px',
-                    }}
-                  >
+                  <div style={{ marginBottom: "12px" }}>
                     <div
                       style={{
-                        fontSize: '14px',
-                        color: '#FFFFFF',
-                        lineHeight: '1.4',
-                        marginBottom: '8px',
+                        fontSize: "14px",
+                        color: "#FFFFFF",
+                        lineHeight: "1.4",
+                        marginBottom: "8px",
                       }}
                     >
-                      <span style={{ fontWeight: 600 }}>humanity_founders</span>{' '}
+                      <span style={{ fontWeight: 600 }}>humanity_founders</span>{" "}
                       {formattedCaption}
                     </div>
                   </div>
@@ -246,37 +264,37 @@ export default function PreviewPerPlatform({
                 {(hashtags.length > 0 || mentions.length > 0) && (
                   <div
                     style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: '8px',
-                      marginBottom: '12px',
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "8px",
+                      marginBottom: "12px",
                     }}
                   >
-                    {hashtags.map((hashtag, index) => (
+                    {hashtags.map((hashtag: string, index: number) => (
                       <span
                         key={`hashtag-${index}`}
                         style={{
-                          fontSize: '12px',
+                          fontSize: "12px",
                           color: config.color,
                           fontWeight: 600,
                           backgroundColor: `${config.color}15`,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
+                          padding: "2px 6px",
+                          borderRadius: "4px",
                         }}
                       >
                         {hashtag}
                       </span>
                     ))}
-                    {mentions.map((mention, index) => (
+                    {mentions.map((mention: string, index: number) => (
                       <span
                         key={`mention-${index}`}
                         style={{
-                          fontSize: '12px',
-                          color: '#64b5f6',
+                          fontSize: "12px",
+                          color: "#64b5f6",
                           fontWeight: 600,
-                          backgroundColor: 'rgba(33, 150, 243, 0.15)',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
+                          backgroundColor: "rgba(33, 150, 243, 0.15)",
+                          padding: "2px 6px",
+                          borderRadius: "4px",
                         }}
                       >
                         {mention}
@@ -288,42 +306,61 @@ export default function PreviewPerPlatform({
                 {/* Mock Engagement */}
                 <div
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    paddingTop: '12px',
-                    borderTop: '1px solid rgba(255,255,255,0.1)',
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    paddingTop: "12px",
+                    borderTop: "1px solid rgba(255,255,255,0.1)",
                   }}
                 >
                   <div
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '16px',
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "16px",
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill={config.color} stroke={config.color}>
-                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: "4px" }}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill={config.color}
+                        stroke={config.color}
+                        aria-hidden
+                      >
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
                       </svg>
                       <span
                         style={{
-                          fontSize: '12px',
-                          color: 'rgba(255,255,255,0.7)',
+                          fontSize: "12px",
+                          color: "rgba(255,255,255,0.7)",
                           fontWeight: 500,
                         }}
                       >
                         0
                       </span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: "4px" }}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="rgba(255,255,255,0.7)"
+                        strokeWidth="2"
+                        aria-hidden
+                      >
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                       </svg>
                       <span
                         style={{
-                          fontSize: '12px',
-                          color: 'rgba(255,255,255,0.7)',
+                          fontSize: "12px",
+                          color: "rgba(255,255,255,0.7)",
                           fontWeight: 500,
                         }}
                       >
@@ -331,14 +368,14 @@ export default function PreviewPerPlatform({
                       </span>
                     </div>
                   </div>
-                  
+
                   <div
                     style={{
-                      fontSize: '10px',
-                      color: 'rgba(255,255,255,0.5)',
+                      fontSize: "10px",
+                      color: "rgba(255,255,255,0.5)",
                       fontWeight: 500,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
                     }}
                   >
                     Scheduled
@@ -348,39 +385,39 @@ export default function PreviewPerPlatform({
                 {/* Platform Features */}
                 <div
                   style={{
-                    marginTop: '12px',
-                    paddingTop: '12px',
-                    borderTop: '1px solid rgba(255,255,255,0.1)',
+                    marginTop: "12px",
+                    paddingTop: "12px",
+                    borderTop: "1px solid rgba(255,255,255,0.1)",
                   }}
                 >
                   <div
                     style={{
-                      fontSize: '11px',
-                      color: 'rgba(255,255,255,0.6)',
+                      fontSize: "11px",
+                      color: "rgba(255,255,255,0.6)",
                       fontWeight: 600,
-                      marginBottom: '6px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
+                      marginBottom: "6px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
                     }}
                   >
                     Features Used:
                   </div>
                   <div
                     style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: '6px',
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "6px",
                     }}
                   >
-                    {config.features.map((feature) => (
+                    {config.features.map((feature: string) => (
                       <span
                         key={feature}
                         style={{
-                          fontSize: '10px',
-                          color: 'rgba(255,255,255,0.8)',
-                          backgroundColor: 'rgba(255,255,255,0.1)',
-                          padding: '2px 6px',
-                          borderRadius: '3px',
+                          fontSize: "10px",
+                          color: "rgba(255,255,255,0.8)",
+                          backgroundColor: "rgba(255,255,255,0.1)",
+                          padding: "2px 6px",
+                          borderRadius: "3px",
                           fontWeight: 500,
                         }}
                       >
@@ -398,106 +435,106 @@ export default function PreviewPerPlatform({
       {/* Quick Stats */}
       <div
         style={{
-          padding: '16px',
-          backgroundColor: 'rgba(255,255,255,0.05)',
-          borderRadius: '8px',
-          border: '1px solid rgba(255,255,255,0.1)',
+          padding: "16px",
+          backgroundColor: "rgba(255,255,255,0.05)",
+          borderRadius: "8px",
+          border: "1px solid rgba(255,255,255,0.1)",
         }}
       >
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-            gap: '16px',
-            textAlign: 'center',
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+            gap: "16px",
+            textAlign: "center",
           }}
         >
           <div>
             <div
               style={{
-                fontSize: '20px',
+                fontSize: "20px",
                 fontWeight: 800,
-                color: '#FFFFFF',
-                marginBottom: '4px',
+                color: "#FFFFFF",
+                marginBottom: "4px",
               }}
             >
               {caption.length}
             </div>
             <div
               style={{
-                fontSize: '11px',
-                color: 'rgba(255,255,255,0.6)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
+                fontSize: "11px",
+                color: "rgba(255,255,255,0.6)",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
               }}
             >
               Characters
             </div>
           </div>
-          
+
           <div>
             <div
               style={{
-                fontSize: '20px',
+                fontSize: "20px",
                 fontWeight: 800,
-                color: '#FFFFFF',
-                marginBottom: '4px',
+                color: "#FFFFFF",
+                marginBottom: "4px",
               }}
             >
               {getHashtags(caption).length}
             </div>
             <div
               style={{
-                fontSize: '11px',
-                color: 'rgba(255,255,255,0.6)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
+                fontSize: "11px",
+                color: "rgba(255,255,255,0.6)",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
               }}
             >
               Hashtags
             </div>
           </div>
-          
+
           <div>
             <div
               style={{
-                fontSize: '20px',
+                fontSize: "20px",
                 fontWeight: 800,
-                color: '#FFFFFF',
-                marginBottom: '4px',
+                color: "#FFFFFF",
+                marginBottom: "4px",
               }}
             >
               {getMentions(caption).length}
             </div>
             <div
               style={{
-                fontSize: '11px',
-                color: 'rgba(255,255,255,0.6)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
+                fontSize: "11px",
+                color: "rgba(255,255,255,0.6)",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
               }}
             >
               Mentions
             </div>
           </div>
-          
+
           <div>
             <div
               style={{
-                fontSize: '20px',
+                fontSize: "20px",
                 fontWeight: 800,
-                color: '#FFFFFF',
-                marginBottom: '4px',
+                color: "#FFFFFF",
+                marginBottom: "4px",
               }}
             >
               {platforms.length}
             </div>
             <div
               style={{
-                fontSize: '11px',
-                color: 'rgba(255,255,255,0.6)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
+                fontSize: "11px",
+                color: "rgba(255,255,255,0.6)",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
               }}
             >
               Platforms

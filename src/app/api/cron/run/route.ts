@@ -11,7 +11,7 @@ const CRON_SECRET = process.env.CRON_SECRET || "";
 const IG_PAGE_ACCESS_TOKEN = process.env.IG_PAGE_ACCESS_TOKEN || "";
 const IG_USER_ID = process.env.IG_USER_ID || "";
 
-type ProviderDoc = { accessToken?: string } & Record<string, any>;
+type ProviderDoc = { accessToken?: string; meta?: any } & Record<string, any>;
 
 function log(...args: any[]) {
   console.log("[CRON]", ...args);
@@ -37,6 +37,7 @@ async function fetchJson(url: string, init?: RequestInit) {
   return body;
 }
 
+// ---------- Instagram helpers ----------
 async function resolveViaUserToken(userToken: string) {
   const pagesResp = await fetchJson(
     `https://graph.facebook.com/${GRAPH_V}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(
@@ -87,8 +88,8 @@ async function createContainerAndWait(
   const creationId = creation?.id as string | undefined;
   if (!creationId) throw new Error("Failed to create media container.");
 
-  const maxTries = 6,
-    delayMs = 5000;
+  const maxTries = 6;
+  const delayMs = 5000;
   for (let i = 0; i < maxTries; i++) {
     const status = await fetchJson(
       `https://graph.facebook.com/${GRAPH_V}/${creationId}?fields=status_code,status&access_token=${encodeURIComponent(
@@ -103,6 +104,7 @@ async function createContainerAndWait(
   throw new Error("Media container is not ready yet.");
 }
 
+// ---------- Cron handler ----------
 export async function GET(req: NextRequest) {
   // Optional auth: only enforce if CRON_SECRET exists
   const incomingSecret =
@@ -114,11 +116,11 @@ export async function GET(req: NextRequest) {
 
   await dbConnect();
 
-  // pick due posts (no email filter)
+  // 1) Pick due posts for instagram or linkedin
   const due = await PlannedPost.find({
     status: { $in: ["QUEUED", "SCHEDULED"] },
     scheduledAt: { $lte: new Date() },
-    platforms: { $elemMatch: { $regex: /^instagram$/i } },
+    platforms: { $elemMatch: { $regex: /^(instagram|linkedin)$/i } },
   })
     .sort({ scheduledAt: 1 })
     .limit(10)
@@ -131,91 +133,162 @@ export async function GET(req: NextRequest) {
     picked: due.map((d) => String(d._id)),
   });
 
-  let pageAccessToken = IG_PAGE_ACCESS_TOKEN;
-  let instagramBusinessId = IG_USER_ID;
+  // Cache env IG creds (if you configured them)
+  let cachedPageAccessToken = IG_PAGE_ACCESS_TOKEN;
+  let cachedIgUserId = IG_USER_ID;
 
   const processed: Record<string, any> = {};
 
   for (const post of due) {
     const idStr = String(post._id);
 
-    // optional: skip in case someone flips it mid-run
+    // idempotency: skip if someone already flipped it
     if ((post as any).status === "PUBLISHED") {
       processed[idStr] = { ok: true, skipped: "already published" };
       continue;
     }
 
-    try {
-      // Decide tokens this iteration
-      let pageToken = pageAccessToken;
-      let igId = instagramBusinessId;
+    // Parse platforms & common fields once
+    const platforms = ((post as any).platforms || []).map((p: string) =>
+      String(p).toLowerCase()
+    );
+    const wantsInstagram = platforms.includes("instagram");
+    const wantsLinkedIn = platforms.includes("linkedin");
 
-      if (!pageToken || !igId) {
-        const provider = await SocialProvider.findOne({
+    const mediaUrl =
+      (post as any)?.media?.imageUrl?.toString().trim() ||
+      (post as any)?.mediaUrl?.toString().trim() ||
+      (post as any)?.imageUrl?.toString().trim();
+    const caption = (post as any).caption || "";
+
+    try {
+      // ---------- LinkedIn branch ----------
+      if (wantsLinkedIn) {
+        // Get LinkedIn creds for this user
+        const liProv = await SocialProvider.findOne({
           userEmail: (post as any).userEmail,
-          platform: "INSTAGRAM",
+          platform: "LINKEDIN",
         })
           .lean<ProviderDoc>()
           .exec();
 
-        const userToken = provider?.accessToken || "";
-        if (!userToken) throw new Error("No Instagram credentials configured.");
-
-        const ctx = await resolveViaUserToken(userToken);
-        pageToken = ctx.pageAccessToken;
-        igId = ctx.instagramBusinessId;
-      }
-
-      // Media URL (support different shapes)
-      const mediaUrl =
-        (post as any)?.media?.imageUrl?.toString().trim() ||
-        (post as any)?.mediaUrl?.toString().trim() ||
-        (post as any)?.imageUrl?.toString().trim();
-      if (!mediaUrl || !/^https?:\/\/.+/i.test(mediaUrl)) {
-        throw new Error("Invalid media URL on post");
-      }
-
-      // Create container → wait → publish
-      const creationId = await createContainerAndWait(
-        igId,
-        pageToken,
-        mediaUrl,
-        (post as any).caption || ""
-      );
-
-      const publish = await fetchJson(
-        `https://graph.facebook.com/${GRAPH_V}/${igId}/media_publish`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            creation_id: String(creationId),
-            access_token: pageToken,
-          }).toString(),
+        if (!liProv?.accessToken || !liProv?.meta?.actorUrn) {
+          throw new Error("LinkedIn not connected for this user.");
         }
-      );
 
-      // ✅ After successful publish, flip status and append results (enum-safe)
-      post.status = "PUBLISHED";
-      post.publishedAt = new Date();
-      (post as any).error = null;
-      (post as any).attempts = ((post as any).attempts || 0) + 1;
+        // Dynamically import LinkedIn publisher
+        const { publishToLinkedIn } = await import("@/lib/publishers/linkedin");
 
-      const results: any[] = Array.isArray((post as any).results)
-        ? (post as any).results
-        : [];
-      results.push({
-        platform: "INSTAGRAM", // MUST match schema enum (not "instagram")
-        remoteId: publish?.id,
-        postedAt: new Date(),
-        source: "cron",
-      });
-      (post as any).results = results;
+        // NOTE: LinkedIn can do text-only; pass imageUrl if you have one
+        const { id: liId } = await publishToLinkedIn({
+          accessToken: liProv.accessToken as string,
+          actorUrn: liProv.meta.actorUrn as string,
+          caption,
+          imageUrl: mediaUrl || undefined,
+        });
 
-      await post.save();
+        // Record LinkedIn success (don’t flip to FAILED if IG later fails)
+        (post as any).attempts = ((post as any).attempts || 0) + 1;
+        (post as any).error = null;
 
-      processed[idStr] = { ok: true, publishId: publish?.id };
-      log("PUBLISH_OK", { id: idStr, creationId, mediaUrl });
+        const resultsLI: any[] = Array.isArray((post as any).results)
+          ? (post as any).results
+          : [];
+        resultsLI.push({
+          platform: "LINKEDIN", // UPPERCASE per schema enum
+          remoteId: liId,
+          postedAt: new Date(),
+          source: "cron",
+        });
+        (post as any).results = resultsLI;
+
+        // If only LinkedIn was requested, we can finalize the doc now
+        if (!wantsInstagram) {
+          post.status = "PUBLISHED";
+          post.publishedAt = new Date();
+          await post.save();
+          processed[idStr] = { ok: true, publishId: liId };
+          log("PUBLISH_OK_LINKEDIN", { id: idStr, liId });
+          continue;
+        }
+      }
+
+      // ---------- Instagram branch ----------
+      if (wantsInstagram) {
+        // IG requires an image
+        if (!mediaUrl || !/^https?:\/\/.+/i.test(mediaUrl)) {
+          throw new Error("Invalid media URL on post (required for Instagram).");
+        }
+
+        // Decide tokens for this iteration (env first, fallback to user token)
+        let pageToken = cachedPageAccessToken;
+        let igId = cachedIgUserId;
+
+        if (!pageToken || !igId) {
+          const provider = await SocialProvider.findOne({
+            userEmail: (post as any).userEmail,
+            platform: "INSTAGRAM",
+          })
+            .lean<ProviderDoc>()
+            .exec();
+
+          const userToken = provider?.accessToken || "";
+          if (!userToken) throw new Error("No Instagram credentials configured.");
+
+          const ctx = await resolveViaUserToken(userToken);
+          pageToken = ctx.pageAccessToken;
+          igId = ctx.instagramBusinessId;
+
+          // cache for subsequent posts in this run
+          cachedPageAccessToken = pageToken;
+          cachedIgUserId = igId;
+        }
+
+        const creationId = await createContainerAndWait(
+          igId,
+          pageToken,
+          mediaUrl,
+          caption
+        );
+
+        const publish = await fetchJson(
+          `https://graph.facebook.com/${GRAPH_V}/${igId}/media_publish`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              creation_id: String(creationId),
+              access_token: pageToken,
+            }).toString(),
+          }
+        );
+
+        (post as any).attempts = ((post as any).attempts || 0) + 1;
+        (post as any).error = null;
+
+        const resultsIG: any[] = Array.isArray((post as any).results)
+          ? (post as any).results
+          : [];
+        resultsIG.push({
+          platform: "INSTAGRAM", // UPPERCASE per schema enum
+          remoteId: publish?.id,
+          postedAt: new Date(),
+          source: "cron",
+        });
+        (post as any).results = resultsIG;
+
+        // If we got here (and maybe LI also succeeded), mark PUBLISHED
+        post.status = "PUBLISHED";
+        post.publishedAt = new Date();
+        await post.save();
+
+        processed[idStr] = { ok: true, publishId: publish?.id };
+        log("PUBLISH_OK_INSTAGRAM", { id: idStr, creationId, mediaUrl });
+        continue;
+      }
+
+      // If neither branch matched (shouldn’t happen with our find query)
+      throw new Error("No supported platform matched for this post.");
     } catch (err: any) {
       post.status = "FAILED";
       post.publishedAt = new Date();
@@ -229,6 +302,5 @@ export async function GET(req: NextRequest) {
   }
 
   log("END", { processedKeys: Object.keys(processed) });
-
   return NextResponse.json({ ok: true, processed });
 }

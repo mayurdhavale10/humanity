@@ -1,89 +1,116 @@
 // src/lib/publishers/linkedin.ts
-const LI_API = "https://api.linkedin.com/v2";
-
-async function liFetch(url: string, token: string, init?: RequestInit) {
-  const res = await fetch(url, {
-    ...init,
-    headers: { Authorization: `Bearer ${token}`, ...(init?.headers || {}) },
-  });
-  const raw = await res.text();
-  let body: any; try { body = JSON.parse(raw); } catch { body = raw; }
-  if (!res.ok) {
-    // Bubble up a readable error
-    const msg =
-      typeof body === "object" && body
-        ? JSON.stringify(body)
-        : `HTTP ${res.status}`;
-    throw new Error(`LinkedIn: ${msg}`);
-  }
-  return body;
-}
+export type PublishLinkedInInput = {
+  accessToken: string;           // from SocialProvider(accessToken)
+  actorUrn: string;              // from SocialProvider.meta.actorUrn (e.g., "urn:li:person:xxxx")
+  caption: string;
+  imageUrl?: string;             // optional: if provided we'll upload & attach
+};
 
 /**
- * 3-step LinkedIn image post:
- * 1) registerUpload  2) PUT bytes to uploadUrl  3) ugcPosts
+ * Registers an image upload with LinkedIn and returns { uploadUrl, asset }
  */
-export async function publishLinkedIn(params: {
-  accessToken: string;
-  actorUrn: string;   // "urn:li:person:<id>"
-  imageUrl: string;   // https
-  caption: string;
-}) {
-  const { accessToken, actorUrn, imageUrl, caption } = params;
-
-  // 1) Register upload
-  const reg = await liFetch(`${LI_API}/assets?action=registerUpload`, accessToken, {
+async function registerImageUpload(ownerUrn: string, accessToken: string) {
+  const res = await fetch("https://api.linkedin.com/v2/assets?action=registerUpload", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "X-Restli-Protocol-Version": "2.0.0",
+    },
     body: JSON.stringify({
       registerUploadRequest: {
         recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
-        owner: actorUrn,
+        owner: ownerUrn,
         serviceRelationships: [
-          { relationshipType: "OWNER", identifier: "urn:li:userGeneratedContent" },
+          { relationshipType: "OWNER", identifier: "urn:li:userGeneratedContent" }
         ],
       },
     }),
   });
-
-  const mech = reg?.value?.uploadMechanism?.["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"];
-  const uploadUrl = mech?.uploadUrl as string | undefined;
-  const asset = reg?.value?.asset as string | undefined; // "urn:li:digitalmediaAsset:xxxx"
-  if (!uploadUrl || !asset) throw new Error("LinkedIn: failed to register upload");
-
-  // 2) Download your image and PUT to LinkedIn
-  const imgRes = await fetch(imageUrl);
-  if (!imgRes.ok) throw new Error("LinkedIn: failed to fetch image");
-  const buf = Buffer.from(await imgRes.arrayBuffer());
-  const contentType = imgRes.headers.get("content-type") || "image/jpeg";
-
-  const put = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": contentType }, body: buf });
-  if (!put.ok) {
-    const t = await put.text().catch(() => "");
-    throw new Error(`LinkedIn upload failed: HTTP ${put.status} ${t}`);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = body?.message || JSON.stringify(body);
+    throw new Error(`LinkedIn registerUpload failed: ${msg}`);
   }
-
-  // 3) Create UGC post
-  const post = await liFetch(`${LI_API}/ugcPosts`, accessToken, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      author: actorUrn,
-      lifecycleState: "PUBLISHED",
-      specificContent: {
-        "com.linkedin.ugc.ShareContent": {
-          shareCommentary: { text: caption || "" },
-          shareMediaCategory: "IMAGE",
-          media: [{ status: "READY", media: asset }],
-        },
-      },
-      visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
-    }),
-  });
-
-  const urn = (post?.id ?? post?.urn ?? asset) as string;
-  return { remoteId: urn };
+  const uploadMechanism = body?.value?.uploadMechanism;
+  const uploadUrl = uploadMechanism?.["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]?.uploadUrl;
+  const asset = body?.value?.asset;
+  if (!uploadUrl || !asset) throw new Error("LinkedIn registerUpload missing uploadUrl/asset");
+  return { uploadUrl, asset };
 }
 
-// Optional default export so TS/Next treats this file as a module in all configs:
-export default { publishLinkedIn };
+/**
+ * Downloads the image and uploads to LinkedIn uploadUrl
+ */
+async function uploadImageToLinkedIn(uploadUrl: string, imageUrl: string) {
+  const img = await fetch(imageUrl);
+  if (!img.ok) throw new Error(`Failed to fetch image: HTTP ${img.status}`);
+  const buff = await img.arrayBuffer();
+
+  const put = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: Buffer.from(buff),
+  });
+  if (!put.ok) {
+    const txt = await put.text().catch(() => "");
+    throw new Error(`LinkedIn image upload failed: HTTP ${put.status} ${txt}`);
+  }
+}
+
+/**
+ * Creates a UGC post. If asset is provided, attaches image.
+ * Returns the created post URN/id.
+ */
+async function createUgcPost(authorUrn: string, accessToken: string, caption: string, asset?: string) {
+  const body: any = {
+    author: authorUrn,
+    lifecycleState: "PUBLISHED",
+    specificContent: {
+      "com.linkedin.ugc.ShareContent": {
+        shareCommentary: { text: caption || "" },
+        shareMediaCategory: asset ? "IMAGE" : "NONE",
+        ...(asset
+          ? { media: [{ status: "READY", media: asset }] }
+          : {}),
+      },
+    },
+    visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
+  };
+
+  const res = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "X-Restli-Protocol-Version": "2.0.0",
+    },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = json?.message || JSON.stringify(json);
+    throw new Error(`LinkedIn post failed: ${msg}`);
+  }
+  return json?.id || json?.urn || null;
+}
+
+/**
+ * High-level publish (text or image+text).
+ * Returns { id } (LinkedIn post URN/id).
+ */
+export async function publishToLinkedIn(input: PublishLinkedInInput) {
+  const { accessToken, actorUrn, caption, imageUrl } = input;
+
+  // TEXT-ONLY:
+  if (!imageUrl) {
+    const id = await createUgcPost(actorUrn, accessToken, caption);
+    return { id };
+  }
+
+  // IMAGE FLOW:
+  const { uploadUrl, asset } = await registerImageUpload(actorUrn, accessToken);
+  await uploadImageToLinkedIn(uploadUrl, imageUrl);
+  const id = await createUgcPost(actorUrn, accessToken, caption, asset);
+  return { id };
+}
