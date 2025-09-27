@@ -18,7 +18,11 @@ async function fetchJson(url: string, init?: RequestInit) {
   const res = await fetch(url, init);
   const raw = await res.text();
   let body: any;
-  try { body = JSON.parse(raw); } catch { body = raw; }
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    body = raw;
+  }
   if (!res.ok) {
     console.error("📉 Graph error", { url, status: res.status, body });
     const msg =
@@ -126,135 +130,188 @@ export async function POST(
 
   // ✅ Idempotency: skip if already published
   if ((post as any).status === "PUBLISHED") {
-    return NextResponse.json({ ok: true, skipped: "already published", postId: String(post._id) });
+    return NextResponse.json({
+      ok: true,
+      skipped: "already published",
+      postId: String(post._id),
+    });
   }
 
   // Platforms and common fields
-  const platforms = ((post as any).platforms || []).map((p: string) => String(p).toLowerCase());
+  const platforms = ((post as any).platforms || []).map((p: string) =>
+    String(p).toLowerCase()
+  );
   const wantsInstagram = platforms.includes("instagram");
-  const wantsLinkedIn  = platforms.includes("linkedin");
+  const wantsLinkedIn = platforms.includes("linkedin");
+  const wantsX = platforms.includes("x");
 
   const mediaUrl =
     (post as any)?.media?.imageUrl?.toString().trim() ||
     (post as any)?.mediaUrl?.toString().trim() ||
-    (post as any)?.imageUrl?.toString().trim();
+    (post as any)?.imageUrl?.toString().trim() ||
+    "";
   const caption = (post as any).caption || "";
 
-  // If neither supported platform is selected
-  if (!wantsInstagram && !wantsLinkedIn) {
-    return NextResponse.json({ error: "Post is not targeted at a supported platform" }, { status: 400 });
+  if (!wantsInstagram && !wantsLinkedIn && !wantsX) {
+    return NextResponse.json(
+      { error: "Post is not targeted at a supported platform" },
+      { status: 400 }
+    );
   }
 
   try {
+    const results: any[] = Array.isArray((post as any).results)
+      ? (post as any).results
+      : [];
+    let anyOk = false;
+    const errors: string[] = [];
     const publishIds: Record<string, string> = {};
 
-    // ---------- LinkedIn branch (optional image; text-only allowed) ----------
+    // ---------- LinkedIn (text-only allowed; image optional) ----------
     if (wantsLinkedIn) {
-      const liProv = await SocialProvider.findOne({
-        userEmail: (post as any).userEmail,
-        platform: "LINKEDIN",
-      }).lean<ProviderDoc>().exec();
-
-      if (!liProv?.accessToken || !liProv?.meta?.actorUrn) {
-        return NextResponse.json({ error: "LinkedIn not connected for this user" }, { status: 400 });
-      }
-
-      const { publishToLinkedIn } = await import("@/lib/publishers/linkedin");
-      const { id: liId } = await publishToLinkedIn({
-        accessToken: liProv.accessToken as string,
-        actorUrn: liProv.meta.actorUrn as string,
-        caption,
-        imageUrl: mediaUrl || undefined, // LinkedIn supports text-only too
-      });
-
-      // Append result (UPPERCASE enum)
-      const resultsLI: any[] = Array.isArray((post as any).results) ? (post as any).results : [];
-      resultsLI.push({
-        platform: "LINKEDIN",
-        remoteId: liId,
-        postedAt: new Date(),
-        source: "run-now",
-      });
-      (post as any).results = resultsLI;
-      (post as any).attempts = ((post as any).attempts || 0) + 1;
-      (post as any).error = null;
-
-      publishIds.linkedin = liId;
-    }
-
-    // ---------- Instagram branch (requires image) ----------
-    if (wantsInstagram) {
-      if (!mediaUrl || !/^https?:\/\/.+/i.test(mediaUrl)) {
-        return NextResponse.json({ error: "Invalid or missing media URL on post (required for Instagram)" }, { status: 400 });
-      }
-
-      // Prefer env Page token + IG user id; fallback to user's saved token
-      let pageAccessToken = IG_PAGE_ACCESS_TOKEN;
-      let instagramBusinessId = IG_USER_ID;
-
-      if (!pageAccessToken || !instagramBusinessId) {
-        const provider = await SocialProvider.findOne({
+      try {
+        const liProv = await SocialProvider.findOne({
           userEmail: (post as any).userEmail,
-          platform: "INSTAGRAM",
-        }).lean<ProviderDoc>().exec();
+          platform: "LINKEDIN",
+        })
+          .lean<ProviderDoc>()
+          .exec();
 
-        const userToken = provider?.accessToken || "";
-        if (!userToken) throw new Error("No Instagram credentials configured.");
-
-        const ctxResolved = await resolveViaUserToken(userToken);
-        pageAccessToken = ctxResolved.pageAccessToken;
-        instagramBusinessId = ctxResolved.instagramBusinessId;
-      }
-
-      // Create container → wait → publish
-      const creationId = await createContainerAndWait(
-        instagramBusinessId,
-        pageAccessToken,
-        mediaUrl,
-        caption
-      );
-
-      const publish = await fetchJson(
-        `https://graph.facebook.com/${GRAPH_V}/${instagramBusinessId}/media_publish`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            creation_id: String(creationId),
-            access_token: pageAccessToken,
-          }).toString(),
+        if (!liProv?.accessToken || !liProv?.meta?.actorUrn) {
+          throw new Error("LinkedIn not connected for this user");
         }
-      );
 
-      const resultsIG: any[] = Array.isArray((post as any).results) ? (post as any).results : [];
-      resultsIG.push({
-        platform: "INSTAGRAM", // schema enum is uppercase
-        remoteId: publish?.id,
-        postedAt: new Date(),
-        source: "run-now",
-      });
-      (post as any).results = resultsIG;
-      (post as any).attempts = ((post as any).attempts || 0) + 1;
-      (post as any).error = null;
+        const { publishToLinkedIn } = await import("@/lib/publishers/linkedin");
+        const { id: liId } = await publishToLinkedIn({
+          accessToken: liProv.accessToken as string,
+          actorUrn: liProv.meta.actorUrn as string,
+          caption,
+          imageUrl: mediaUrl || undefined,
+        });
 
-      publishIds.instagram = publish?.id;
+        results.push({
+          platform: "LINKEDIN",
+          remoteId: liId,
+          postedAt: new Date(),
+          source: "run-now",
+        });
+        publishIds.linkedin = liId;
+        anyOk = true;
+      } catch (e: any) {
+        errors.push(`LINKEDIN: ${e?.message || String(e)}`);
+      }
     }
 
-    // ✅ Finalize the post once at least one platform was posted
-    post.status = "PUBLISHED";
+    // ---------- Instagram (requires image) ----------
+    if (wantsInstagram) {
+      try {
+        if (!mediaUrl || !/^https?:\/\/.+/i.test(mediaUrl)) {
+          throw new Error(
+            "Invalid or missing media URL on post (required for Instagram)"
+          );
+        }
+
+        // Prefer env Page token + IG user id; fallback to user's saved token
+        let pageAccessToken = IG_PAGE_ACCESS_TOKEN;
+        let instagramBusinessId = IG_USER_ID;
+
+        if (!pageAccessToken || !instagramBusinessId) {
+          const provider = await SocialProvider.findOne({
+            userEmail: (post as any).userEmail,
+            platform: "INSTAGRAM",
+          })
+            .lean<ProviderDoc>()
+            .exec();
+
+          const userToken = provider?.accessToken || "";
+          if (!userToken) throw new Error("No Instagram credentials configured.");
+
+          const ctxResolved = await resolveViaUserToken(userToken);
+          pageAccessToken = ctxResolved.pageAccessToken;
+          instagramBusinessId = ctxResolved.instagramBusinessId;
+        }
+
+        // Create container → wait → publish
+        const creationId = await createContainerAndWait(
+          instagramBusinessId,
+          pageAccessToken,
+          mediaUrl,
+          caption
+        );
+
+        const publishResp = await fetchJson(
+          `https://graph.facebook.com/${GRAPH_V}/${instagramBusinessId}/media_publish`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              creation_id: String(creationId),
+              access_token: pageAccessToken,
+            }).toString(),
+          }
+        );
+
+        results.push({
+          platform: "INSTAGRAM",
+          remoteId: publishResp?.id,
+          postedAt: new Date(),
+          source: "run-now",
+        });
+        publishIds.instagram = publishResp?.id;
+        anyOk = true;
+      } catch (e: any) {
+        errors.push(`INSTAGRAM: ${e?.message || String(e)}`);
+      }
+    }
+
+    // ---------- X (Twitter) ----------
+    if (wantsX) {
+      try {
+        const xProv = await SocialProvider.findOne({
+          userEmail: (post as any).userEmail,
+          platform: "X",
+        })
+          .lean<any>()
+          .exec();
+
+        if (!xProv?.accessToken) throw new Error("X not connected for this user");
+
+        const { publishToX } = await import("@/lib/publishers/x");
+        const { id: tweetId } = await publishToX({
+          accessToken: xProv.accessToken,
+          text: caption,
+        });
+
+        results.push({
+          platform: "X",
+          remoteId: tweetId,
+          postedAt: new Date(),
+          source: "run-now",
+        });
+        publishIds.x = tweetId;
+        anyOk = true;
+      } catch (e: any) {
+        errors.push(`X: ${e?.message || String(e)}`);
+      }
+    }
+
+    // ✅ Finalize once (after attempting all requested platforms)
+    (post as any).results = results;
+    (post as any).attempts = ((post as any).attempts || 0) + 1;
+    (post as any).error = errors.length ? errors.join(" | ") : null;
     post.publishedAt = new Date();
+    post.status = anyOk ? "PUBLISHED" : "FAILED";
     await post.save();
 
-    // Return both ids if both were targeted; otherwise single
-    if (publishIds.linkedin && publishIds.instagram) {
-      return NextResponse.json({ ok: true, publishIds });
-    }
-    const single =
-      publishIds.linkedin ?? publishIds.instagram ?? undefined;
-    return NextResponse.json({ ok: true, publishId: single, publishIds });
-
+    return anyOk
+      ? NextResponse.json({
+          ok: true,
+          publishIds:
+            Object.keys(publishIds).length > 0 ? publishIds : undefined,
+          results: results.map((r) => ({ platform: r.platform, id: r.remoteId })),
+        })
+      : NextResponse.json({ ok: false, error: (post as any).error }, { status: 500 });
   } catch (e: any) {
-    // Failure → mark FAILED and surface reason
     (post as any).status = "FAILED";
     (post as any).publishedAt = new Date();
     (post as any).error = String(e?.message || e);

@@ -118,11 +118,11 @@ export async function GET(req: NextRequest) {
 
   await dbConnect();
 
-  // Pick due posts for Instagram or LinkedIn
+  // 1) Pick due posts for instagram | linkedin | x
   const due = await PlannedPost.find({
     status: { $in: ["QUEUED", "SCHEDULED"] },
     scheduledAt: { $lte: new Date() },
-    platforms: { $elemMatch: { $regex: /^(instagram|linkedin)$/i } },
+    platforms: { $elemMatch: { $regex: /^(instagram|linkedin|x)$/i } },
   })
     .sort({ scheduledAt: 1 })
     .limit(10)
@@ -150,11 +150,12 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    const platforms = ((post as any).platforms || []).map((p: string) =>
+    const plats = ((post as any).platforms || []).map((p: string) =>
       String(p).toLowerCase()
     );
-    const wantsInstagram = platforms.includes("instagram");
-    const wantsLinkedIn = platforms.includes("linkedin");
+    const wantsInstagram = plats.includes("instagram");
+    const wantsLinkedIn = plats.includes("linkedin");
+    const wantsX = plats.includes("x");
 
     const mediaUrl =
       (post as any)?.media?.imageUrl?.toString().trim() ||
@@ -169,7 +170,7 @@ export async function GET(req: NextRequest) {
     let anyOk = false;
     const errs: string[] = [];
 
-    // Try LinkedIn
+    /* ---------- LinkedIn ---------- */
     if (wantsLinkedIn) {
       try {
         const liProv = await SocialProvider.findOne({
@@ -204,7 +205,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Try Instagram
+    /* ---------- Instagram ---------- */
     if (wantsInstagram) {
       try {
         if (!/^https?:\/\/.+/i.test(mediaUrl)) {
@@ -266,6 +267,50 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    /* ---------- X (Twitter) ---------- */
+    if (wantsX) {
+      try {
+        const xProv = await SocialProvider.findOne({
+          userEmail: (post as any).userEmail,
+          platform: "X",
+        })
+          .lean<any>()
+          .exec();
+
+        if (!xProv?.accessToken) throw new Error("X not connected for this user");
+
+        const { publishToX } = await import("@/lib/publishers/x");
+        const { id: tweetId } = await publishToX({
+          accessToken: xProv.accessToken,
+          text: caption || "", // text-only for now
+        });
+
+        const resultsX: any[] = Array.isArray((post as any).results)
+          ? (post as any).results
+          : [];
+        resultsX.push({
+          platform: "X",
+          remoteId: tweetId,
+          postedAt: new Date(),
+          source: "cron",
+        });
+        (post as any).results = resultsX;
+        (post as any).attempts = ((post as any).attempts || 0) + 1;
+
+        // also mirror into local results accumulator
+        results.push({
+          platform: "X",
+          remoteId: tweetId,
+          postedAt: new Date(),
+          source: "cron",
+        });
+        anyOk = true;
+      } catch (e: any) {
+        errs.push(`X: ${e?.message || String(e)}`);
+      }
+    }
+
+    // finalize per post (after attempting all requested platforms)
     try {
       (post as any).results = results;
       (post as any).attempts = ((post as any).attempts || 0) + 1;
@@ -289,7 +334,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true, processed });
 }
 
-// Optional: allow POST to trigger the same logic (no ctx here)
+// Optional: allow POST to trigger the same logic
 export async function POST(req: NextRequest) {
   return GET(req);
 }
