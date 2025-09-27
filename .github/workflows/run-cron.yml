@@ -1,12 +1,33 @@
-- name: Ping every minute for 5 minutes (verbose; fail on non-200)
-  env:
-    CRON_JOB_URL: ${{ secrets.CRON_JOB_URL }} # https://.../api/cron/run?secret=xxxx
-  run: |
-    set -euo pipefail
-    for i in {1..5}; do
-      echo "[$(date -u)] Call #$i -> $CRON_JOB_URL"
-      http_code=$(curl -sS -o response.txt -w "%{http_code}" -D headers.txt --max-time 25 "$CRON_JOB_URL" || true)
-      echo "HTTP $http_code"; cat headers.txt || true; cat response.txt || true
-      if [ "${http_code:-000}" -lt 200 ] || [ "${http_code:-000}" -ge 300 ]; then exit 1; fi
-      if [ $i -lt 5 ]; then sleep 60; fi
-    done
+name: Hit cron endpoint
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # GA minimum; runs every 5m (UTC)
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/run-cron.yml"
+
+jobs:
+  call-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping every minute for 5 minutes (verbose; fail on non-200)
+        env:
+          CRON_JOB_URL: ${{ secrets.CRON_JOB_URL }} # e.g. https://.../api/cron/run?secret=xxxx
+        run: |
+          set -euo pipefail
+          if [ -z "${CRON_JOB_URL:-}" ]; then
+            echo "CRON_JOB_URL secret is missing"; exit 1
+          fi
+          for i in {1..5}; do
+            echo "[$(date -u)] Call #$i -> $CRON_JOB_URL"
+            http_code=$(curl -sS -o response.txt -w "%{http_code}" -D headers.txt --max-time 25 "$CRON_JOB_URL" || true)
+            echo "HTTP $http_code"
+            echo "---- Response headers ----"; cat headers.txt || true
+            echo "---- Response body ----"; cat response.txt || true
+            if [ "${http_code:-000}" -lt 200 ] || [ "${http_code:-000}" -ge 300 ]; then
+              echo "Request failed with HTTP $http_code"; exit 1
+            fi
+            if [ $i -lt 5 ]; then sleep 60; fi
+          done
