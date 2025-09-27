@@ -17,7 +17,8 @@ function toUTCISOStringLocal(dateTimeLocal: string) {
 }
 
 // Build absolute URL to public sample image
-const BASE = (process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") as string) || "";
+const BASE =
+  (process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") as string) || "";
 const SAMPLE_IMG = `${BASE}/samples/dummy_post.png`;
 
 export default function Composer() {
@@ -57,7 +58,9 @@ export default function Composer() {
   }
 
   function togglePlatform(p: Platform) {
-    setPlatforms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
+    setPlatforms((prev) =>
+      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
+    );
   }
 
   // Normal schedule flow (cron will pick it up)
@@ -67,11 +70,10 @@ export default function Composer() {
     setMessage(null);
     try {
       if (!imageUrl) throw new Error("Add an image (upload or paste URL)");
-      if (!platforms.length) throw new Error("Pick at least one platform");
       const scheduledAt = toUTCISOStringLocal(when);
       const body = {
         userEmail: email,
-        platforms, // keep uppercase
+        platforms, // keep UPPERCASE as selected
         status: "QUEUED",
         kind: "IMAGE",
         caption,
@@ -93,7 +95,7 @@ export default function Composer() {
     }
   }
 
-  // Launch quick (server proxy calls run-now) — send ALL platforms
+  // Launch quick (server proxy calls run-now) — send ALL selected platforms
   async function launchQuick() {
     setSaving(true);
     setMessage(null);
@@ -104,14 +106,15 @@ export default function Composer() {
       const res = await fetch("/api/demo/launch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platforms, imageUrl, caption }), // ✅ all platforms
+        body: JSON.stringify({ platforms, imageUrl, caption }), // send ALL
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to launch");
 
+      // show per-platform ids if present
       const ids = data.publishIds
-        ? Object.entries<Record<string, string>>(data.publishIds)
-            .map(([k, v]) => `${k}:${v}`)
+        ? Object.entries(data.publishIds)
+            .map(([k, v]) => `${k}:${v as string}`)
             .join(", ")
         : data.publishId || "ok";
 
@@ -167,7 +170,8 @@ export default function Composer() {
           backgroundColor: "#B5979A",
           borderRadius: "12px",
           padding: "32px",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15)",
+          boxShadow:
+            "0 10px 30px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15)",
           border: "1px solid rgba(255,255,255,0.08)",
           display: "grid",
           gap: "24px",
@@ -184,14 +188,162 @@ export default function Composer() {
 
         <ScheduleInput when={when} onWhenChange={setWhen} />
 
-        <PlatformToggles platforms={platforms} onTogglePlatform={togglePlatform} />
-
-        <ActionButtons
-          onSubmit={submit}
-          onLaunchQuick={launchQuick}
-          saving={saving}
-          uploading={uploading}
+        <PlatformToggles
+          platforms={platforms}
+          onTogglePlatform={togglePlatform}
         />
+
+        {/* Actions + Verification links row */}
+        <div
+          style={{
+            display: "grid",
+            gap: "16px",
+          }}
+        >
+          <ActionButtons
+            onSubmit={submit}
+            onLaunchQuick={launchQuick}
+            saving={saving}
+            uploading={uploading}
+          />
+
+          {/* Verification / Recruiter Links */}
+          <aside
+            style={{
+              marginTop: "4px",
+              padding: "14px 16px",
+              backgroundColor: "rgba(0,0,0,0.22)",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.12)",
+              color: "rgba(255,255,255,0.9)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "14px",
+                fontWeight: 700,
+                marginBottom: "6px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <span>Verify automation</span>
+              <span
+                style={{
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  background: "rgba(255,255,255,0.12)",
+                }}
+              >
+                Demo
+              </span>
+            </div>
+            <div
+              style={{
+                fontSize: "13px",
+                lineHeight: 1.5,
+                marginBottom: "8px",
+                color: "rgba(255,255,255,0.85)",
+              }}
+            >
+              After you click <strong>Schedule Post</strong> or{" "}
+              <strong>Launch Quick (Demo)</strong>, you can confirm the post on
+              these profiles:
+            </div>
+            <ul
+              style={{
+                listStyle: "none",
+                padding: 0,
+                margin: 0,
+                display: "grid",
+                gap: "6px",
+              }}
+            >
+              <li>
+                <a
+                  href="https://www.instagram.com/_mmayurr/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "#fff",
+                    textDecoration: "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "6px 8px",
+                    borderRadius: "6px",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "#E4405F",
+                    }}
+                  />
+                  Instagram: _mmayurr
+                  <span
+                    aria-hidden
+                    style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}
+                  >
+                    ↗
+                  </span>
+                </a>
+                <div
+                  style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 }}
+                >
+                  Click to see the automated post on your feed.
+                </div>
+              </li>
+              <li>
+                <a
+                  href="https://www.linkedin.com/in/mayur-dhavale-b98584387/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "#fff",
+                    textDecoration: "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "6px 8px",
+                    borderRadius: "6px",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    marginTop: "6px",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "#0A66C2",
+                    }}
+                  />
+                  LinkedIn: mayur-dhavale-b98584387
+                  <span
+                    aria-hidden
+                    style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}
+                  >
+                    ↗
+                  </span>
+                </a>
+                <div
+                  style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 }}
+                >
+                  Click to verify the cross-post on your LinkedIn.
+                </div>
+              </li>
+            </ul>
+          </aside>
+        </div>
 
         <StatusMessage message={message} />
       </form>
