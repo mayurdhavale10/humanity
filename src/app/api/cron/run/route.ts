@@ -37,7 +37,8 @@ async function fetchJson(url: string, init?: RequestInit) {
   return body;
 }
 
-// ---------- Instagram helpers ----------
+/* ---------- Instagram helpers ---------- */
+
 async function resolveViaUserToken(userToken: string) {
   const pagesResp = await fetchJson(
     `https://graph.facebook.com/${GRAPH_V}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(
@@ -96,7 +97,7 @@ async function createContainerAndWait(
         pageToken
       )}`
     );
-    const code = status?.status_code;
+    const code = status?.status_code; // FINISHED | IN_PROGRESS | ERROR
     if (code === "FINISHED") return creationId;
     if (code === "ERROR") throw new Error("Media container processing failed.");
     await new Promise((r) => setTimeout(r, delayMs));
@@ -104,7 +105,8 @@ async function createContainerAndWait(
   throw new Error("Media container is not ready yet.");
 }
 
-// ---------- Cron handler ----------
+/* ---------- Handler (publishes all requested platforms in one pass) ---------- */
+
 export async function GET(req: NextRequest) {
   // Optional auth: only enforce if CRON_SECRET exists
   const incomingSecret =
@@ -116,7 +118,7 @@ export async function GET(req: NextRequest) {
 
   await dbConnect();
 
-  // 1) Pick due posts for instagram or linkedin
+  // Pick due posts for Instagram or LinkedIn
   const due = await PlannedPost.find({
     status: { $in: ["QUEUED", "SCHEDULED"] },
     scheduledAt: { $lte: new Date() },
@@ -133,7 +135,7 @@ export async function GET(req: NextRequest) {
     picked: due.map((d) => String(d._id)),
   });
 
-  // Cache env IG creds (if you configured them)
+  // Cache env IG creds (if configured)
   let cachedPageAccessToken = IG_PAGE_ACCESS_TOKEN;
   let cachedIgUserId = IG_USER_ID;
 
@@ -142,13 +144,12 @@ export async function GET(req: NextRequest) {
   for (const post of due) {
     const idStr = String(post._id);
 
-    // idempotency: skip if someone already flipped it
+    // Idempotency: skip if already published
     if ((post as any).status === "PUBLISHED") {
       processed[idStr] = { ok: true, skipped: "already published" };
       continue;
     }
 
-    // Parse platforms & common fields once
     const platforms = ((post as any).platforms || []).map((p: string) =>
       String(p).toLowerCase()
     );
@@ -158,13 +159,19 @@ export async function GET(req: NextRequest) {
     const mediaUrl =
       (post as any)?.media?.imageUrl?.toString().trim() ||
       (post as any)?.mediaUrl?.toString().trim() ||
-      (post as any)?.imageUrl?.toString().trim();
+      (post as any)?.imageUrl?.toString().trim() ||
+      "";
     const caption = (post as any).caption || "";
 
-    try {
-      // ---------- LinkedIn branch ----------
-      if (wantsLinkedIn) {
-        // Get LinkedIn creds for this user
+    const results: any[] = Array.isArray((post as any).results)
+      ? (post as any).results
+      : [];
+    let anyOk = false;
+    const errs: string[] = [];
+
+    // Try LinkedIn
+    if (wantsLinkedIn) {
+      try {
         const liProv = await SocialProvider.findOne({
           userEmail: (post as any).userEmail,
           platform: "LINKEDIN",
@@ -176,51 +183,35 @@ export async function GET(req: NextRequest) {
           throw new Error("LinkedIn not connected for this user.");
         }
 
-        // Dynamically import LinkedIn publisher
         const { publishToLinkedIn } = await import("@/lib/publishers/linkedin");
 
-        // NOTE: LinkedIn can do text-only; pass imageUrl if you have one
         const { id: liId } = await publishToLinkedIn({
           accessToken: liProv.accessToken as string,
           actorUrn: liProv.meta.actorUrn as string,
           caption,
-          imageUrl: mediaUrl || undefined,
+          imageUrl: mediaUrl || undefined, // LinkedIn allows text-only
         });
 
-        // Record LinkedIn success (don’t flip to FAILED if IG later fails)
-        (post as any).attempts = ((post as any).attempts || 0) + 1;
-        (post as any).error = null;
-
-        const resultsLI: any[] = Array.isArray((post as any).results)
-          ? (post as any).results
-          : [];
-        resultsLI.push({
-          platform: "LINKEDIN", // UPPERCASE per schema enum
+        results.push({
+          platform: "LINKEDIN",
           remoteId: liId,
           postedAt: new Date(),
           source: "cron",
         });
-        (post as any).results = resultsLI;
-
-        // If only LinkedIn was requested, we can finalize the doc now
-        if (!wantsInstagram) {
-          post.status = "PUBLISHED";
-          post.publishedAt = new Date();
-          await post.save();
-          processed[idStr] = { ok: true, publishId: liId };
-          log("PUBLISH_OK_LINKEDIN", { id: idStr, liId });
-          continue;
-        }
+        anyOk = true;
+      } catch (e: any) {
+        errs.push(`LINKEDIN: ${e?.message || String(e)}`);
       }
+    }
 
-      // ---------- Instagram branch ----------
-      if (wantsInstagram) {
-        // IG requires an image
-        if (!mediaUrl || !/^https?:\/\/.+/i.test(mediaUrl)) {
+    // Try Instagram
+    if (wantsInstagram) {
+      try {
+        if (!/^https?:\/\/.+/i.test(mediaUrl)) {
           throw new Error("Invalid media URL on post (required for Instagram).");
         }
 
-        // Decide tokens for this iteration (env first, fallback to user token)
+        // Decide tokens (env first, fallback to saved user token)
         let pageToken = cachedPageAccessToken;
         let igId = cachedIgUserId;
 
@@ -263,44 +254,42 @@ export async function GET(req: NextRequest) {
           }
         );
 
-        (post as any).attempts = ((post as any).attempts || 0) + 1;
-        (post as any).error = null;
-
-        const resultsIG: any[] = Array.isArray((post as any).results)
-          ? (post as any).results
-          : [];
-        resultsIG.push({
-          platform: "INSTAGRAM", // UPPERCASE per schema enum
+        results.push({
+          platform: "INSTAGRAM",
           remoteId: publish?.id,
           postedAt: new Date(),
           source: "cron",
         });
-        (post as any).results = resultsIG;
-
-        // If we got here (and maybe LI also succeeded), mark PUBLISHED
-        post.status = "PUBLISHED";
-        post.publishedAt = new Date();
-        await post.save();
-
-        processed[idStr] = { ok: true, publishId: publish?.id };
-        log("PUBLISH_OK_INSTAGRAM", { id: idStr, creationId, mediaUrl });
-        continue;
+        anyOk = true;
+      } catch (e: any) {
+        errs.push(`INSTAGRAM: ${e?.message || String(e)}`);
       }
+    }
 
-      // If neither branch matched (shouldn’t happen with our find query)
-      throw new Error("No supported platform matched for this post.");
-    } catch (err: any) {
-      post.status = "FAILED";
-      post.publishedAt = new Date();
-      (post as any).error = String(err?.message || err);
+    try {
+      (post as any).results = results;
       (post as any).attempts = ((post as any).attempts || 0) + 1;
+      (post as any).error = errs.length ? errs.join(" | ") : null;
+      post.publishedAt = new Date();
+      post.status = anyOk ? "PUBLISHED" : "FAILED";
       await post.save();
 
-      processed[idStr] = { ok: false, error: (post as any).error };
-      console.error("[CRON] PUBLISH_FAIL", { id: idStr, error: (post as any).error });
+      processed[idStr] = anyOk
+        ? {
+            ok: true,
+            results: results.map((r) => ({ platform: r.platform, id: r.remoteId })),
+          }
+        : { ok: false, error: (post as any).error };
+    } catch (e: any) {
+      processed[idStr] = { ok: false, error: String(e?.message || e) };
     }
   }
 
   log("END", { processedKeys: Object.keys(processed) });
   return NextResponse.json({ ok: true, processed });
+}
+
+// Optional: allow POST to trigger the same logic (no ctx here)
+export async function POST(req: NextRequest) {
+  return GET(req);
 }
