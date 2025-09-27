@@ -194,12 +194,7 @@ export default function Composer() {
         />
 
         {/* Actions + Verification links row */}
-        <div
-          style={{
-            display: "grid",
-            gap: "16px",
-          }}
-        >
+        <div style={{ display: "grid", gap: "16px" }}>
           <ActionButtons
             onSubmit={submit}
             onLaunchQuick={launchQuick}
@@ -262,6 +257,7 @@ export default function Composer() {
                 gap: "6px",
               }}
             >
+              {/* Instagram */}
               <li>
                 <a
                   href="https://www.instagram.com/_mmayurr/"
@@ -296,11 +292,17 @@ export default function Composer() {
                   </span>
                 </a>
                 <div
-                  style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 }}
+                  style={{
+                    fontSize: 12,
+                    color: "rgba(255,255,255,0.75)",
+                    marginTop: 4,
+                  }}
                 >
                   Click to see the automated post on your feed.
                 </div>
               </li>
+
+              {/* LinkedIn */}
               <li>
                 <a
                   href="https://www.linkedin.com/in/mayur-dhavale-b98584387/"
@@ -336,9 +338,59 @@ export default function Composer() {
                   </span>
                 </a>
                 <div
-                  style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 }}
+                  style={{
+                    fontSize: 12,
+                    color: "rgba(255,255,255,0.75)",
+                    marginTop: 4,
+                  }}
                 >
                   Click to verify the cross-post on your LinkedIn.
+                </div>
+              </li>
+
+              {/* X (Twitter) */}
+              <li>
+                <a
+                  href="https://x.com/Mayur_dhavalee"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "#fff",
+                    textDecoration: "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "6px 8px",
+                    borderRadius: "6px",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    marginTop: "6px",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "#1D9BF0",
+                    }}
+                  />
+                  X (Twitter): @Mayur_dhavalee
+                  <span
+                    aria-hidden
+                    style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}
+                  >
+                    ↗
+                  </span>
+                </a>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "rgba(255,255,255,0.75)",
+                    marginTop: 4,
+                  }}
+                >
+                  Click to confirm the tweet was posted.
                 </div>
               </li>
             </ul>
