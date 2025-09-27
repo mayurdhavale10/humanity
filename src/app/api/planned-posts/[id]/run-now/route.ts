@@ -188,7 +188,7 @@ export async function POST(
       ? (post as any).results
       : [];
     results.push({
-      platform: "instagram",
+      platform: "INSTAGRAM",
       remoteId: publish?.id,
       postedAt: new Date(),
     });
