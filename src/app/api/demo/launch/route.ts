@@ -12,6 +12,7 @@ const BASE_URL =
   process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") || "http://localhost:3000";
 
 type Platform = "INSTAGRAM" | "LINKEDIN" | "X";
+const ALLOWED: Platform[] = ["INSTAGRAM", "LINKEDIN", "X"];
 
 function toAbsolute(u: string) {
   if (/^https?:\/\//i.test(u)) return u;
@@ -24,8 +25,8 @@ export async function OPTIONS() {
 
 /**
  * POST /api/demo/launch
- * Body: { platform: "INSTAGRAM"|"LINKEDIN"|"X", imageUrl: string, caption?: string }
- * 1) creates a PlannedPost (queued, scheduled for now)
+ * Body: { platforms: Platform[], imageUrl: string, caption?: string }
+ * 1) creates ONE PlannedPost (QUEUED, due now) with ALL requested platforms
  * 2) immediately triggers run-now on that new post (server-to-server with secret)
  */
 export async function POST(req: NextRequest) {
@@ -35,51 +36,73 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const platform = String(body?.platform || "INSTAGRAM").toUpperCase() as Platform;
+    const rawPlatforms: unknown = body?.platforms;
+
+    // Accept array only; normalize to UPPERCASE and filter to allowed
+    const platforms: Platform[] = Array.isArray(rawPlatforms)
+      ? (rawPlatforms
+          .map((p) => String(p).toUpperCase())
+          .filter((p): p is Platform => ALLOWED.includes(p as Platform)))
+      : [];
 
     const rawUrl = String(body?.imageUrl || "").trim();
-    const imageUrl = toAbsolute(rawUrl); // <-- normalize to absolute
+    const imageUrl = toAbsolute(rawUrl);
     const caption = String(body?.caption || "");
 
-    if (!imageUrl || !/^https?:\/\/.+/i.test(imageUrl)) {
-      return NextResponse.json({ error: "Valid imageUrl is required" }, { status: 400 });
+    if (!platforms.length) {
+      return NextResponse.json({ error: "At least one platform required" }, { status: 400 });
     }
-    if (!["INSTAGRAM", "LINKEDIN", "X"].includes(platform)) {
-      return NextResponse.json({ error: "Unsupported platform" }, { status: 400 });
+    if (!/^https?:\/\/.+/i.test(imageUrl)) {
+      return NextResponse.json({ error: "Valid imageUrl is required" }, { status: 400 });
     }
 
     await dbConnect();
 
-    // 1) create planned post scheduled for "now"
+    // Create one post due “now”
     const post = await PlannedPost.create({
       userEmail: DEMO_EMAIL,
-      platforms: [platform],          // keep UPPERCASE to match enum
+      platforms, // keep UPPERCASE to satisfy schema enum
       status: "QUEUED",
       kind: "IMAGE",
       caption,
-      media: { imageUrl },            // <-- store the absolute URL
-      scheduledAt: new Date(Date.now() - 1000), // due immediately
+      media: { imageUrl }, // store normalized absolute URL
+      scheduledAt: new Date(Date.now() - 1000), // immediately due
     });
 
-    // 2) trigger run-now internally (server→server; secret not exposed to browser)
+    // Trigger run-now (server→server; secret never exposed to browser)
     const runUrl = `${BASE_URL}/api/planned-posts/${post._id}/run-now?secret=${encodeURIComponent(
       CRON_SECRET
     )}`;
-
     const res = await fetch(runUrl, { method: "POST" });
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
       return NextResponse.json(
-        { ok: false, postId: String(post._id), error: data?.error || `HTTP ${res.status}` },
+        {
+          ok: false,
+          postId: String(post._id),
+          error: data?.error || `HTTP ${res.status}`,
+        },
         { status: 500 }
       );
+    }
+
+    // run-now may return { results: [{platform, id}, ...] } or { publishIds: { ... } }
+    // Normalize to a simple map if possible
+    let publishIds: Record<string, string> | null = null;
+    if (data?.results && Array.isArray(data.results)) {
+      publishIds = {};
+      for (const r of data.results) {
+        if (r?.platform && r?.id) publishIds[r.platform.toLowerCase()] = r.id;
+      }
+    } else if (data?.publishIds && typeof data.publishIds === "object") {
+      publishIds = data.publishIds as Record<string, string>;
     }
 
     return NextResponse.json({
       ok: true,
       postId: String(post._id),
-      publishId: data?.publishId,
+      publishIds,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });

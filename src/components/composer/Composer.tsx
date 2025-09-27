@@ -17,8 +17,7 @@ function toUTCISOStringLocal(dateTimeLocal: string) {
 }
 
 // Build absolute URL to public sample image
-const BASE =
-  (process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") as string) || "";
+const BASE = (process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") as string) || "";
 const SAMPLE_IMG = `${BASE}/samples/dummy_post.png`;
 
 export default function Composer() {
@@ -58,9 +57,7 @@ export default function Composer() {
   }
 
   function togglePlatform(p: Platform) {
-    setPlatforms((prev) =>
-      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
-    );
+    setPlatforms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
   }
 
   // Normal schedule flow (cron will pick it up)
@@ -70,10 +67,11 @@ export default function Composer() {
     setMessage(null);
     try {
       if (!imageUrl) throw new Error("Add an image (upload or paste URL)");
+      if (!platforms.length) throw new Error("Pick at least one platform");
       const scheduledAt = toUTCISOStringLocal(when);
       const body = {
         userEmail: email,
-        platforms, // <-- stays UPPERCASE as selected
+        platforms, // keep uppercase
         status: "QUEUED",
         kind: "IMAGE",
         caption,
@@ -95,21 +93,29 @@ export default function Composer() {
     }
   }
 
-  // Launch quick (server proxy calls run-now)
+  // Launch quick (server proxy calls run-now) — send ALL platforms
   async function launchQuick() {
     setSaving(true);
     setMessage(null);
     try {
       if (!imageUrl) throw new Error("Add an image (upload or paste URL)");
-      const platform = platforms[0] || "INSTAGRAM";
+      if (!platforms.length) throw new Error("Pick at least one platform");
+
       const res = await fetch("/api/demo/launch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, imageUrl, caption }),
+        body: JSON.stringify({ platforms, imageUrl, caption }), // ✅ all platforms
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to launch");
-      setMessage(`✅ Launched now (publishId: ${data.publishId || "ok"})`);
+
+      const ids = data.publishIds
+        ? Object.entries<Record<string, string>>(data.publishIds)
+            .map(([k, v]) => `${k}:${v}`)
+            .join(", ")
+        : data.publishId || "ok";
+
+      setMessage(`✅ Launched now → ${ids}`);
     } catch (e: any) {
       setMessage(`❌ ${e.message || e}`);
     } finally {
@@ -161,8 +167,7 @@ export default function Composer() {
           backgroundColor: "#B5979A",
           borderRadius: "12px",
           padding: "32px",
-          boxShadow:
-            "0 10px 30px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15)",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15)",
           border: "1px solid rgba(255,255,255,0.08)",
           display: "grid",
           gap: "24px",
@@ -179,10 +184,7 @@ export default function Composer() {
 
         <ScheduleInput when={when} onWhenChange={setWhen} />
 
-        <PlatformToggles
-          platforms={platforms}
-          onTogglePlatform={togglePlatform}
-        />
+        <PlatformToggles platforms={platforms} onTogglePlatform={togglePlatform} />
 
         <ActionButtons
           onSubmit={submit}
