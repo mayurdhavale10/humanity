@@ -6,6 +6,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongo";
 import PlannedPost, { IPlannedPost } from "@/models/PlannedPost";
 
+// Keep this aligned with your Mongoose enum in PlannedPost schema
+const PLATFORM_ENUM = ["INSTAGRAM", "X", "LINKEDIN"] as const;
+type PlatformEnum = typeof PLATFORM_ENUM[number];
+
 // Allow preflight / health checks
 export async function OPTIONS() {
   return NextResponse.json({ ok: true });
@@ -19,6 +23,7 @@ export async function POST(req: NextRequest) {
       media?: { imageUrl?: string };
       imageUrl?: string;
       mediaUrl?: string;
+      platforms?: string[];
     };
 
     // ---- Required fields ----
@@ -38,14 +43,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "scheduledAt required" }, { status: 400 });
     }
 
-    // ---- Parse scheduledAt (UI already sent UTC ISO) ----
+    // ---- Parse scheduledAt (UI sends UTC ISO; store as Date) ----
     const when = new Date(body.scheduledAt as any);
     if (isNaN(when.getTime())) {
       return NextResponse.json({ error: "scheduledAt invalid" }, { status: 400 });
     }
 
-    // ---- Normalize platforms (cron matches lowercase) ----
-    const platforms = (body.platforms as string[]).map((p) => String(p).toLowerCase());
+    // ---- Normalize & validate platforms against schema enum (UPPERCASE) ----
+    const platforms = (body.platforms as string[])
+      .map((p) => String(p).toUpperCase()) as PlatformEnum[];
+
+    for (const p of platforms) {
+      if (!PLATFORM_ENUM.includes(p)) {
+        return NextResponse.json(
+          { error: `platforms contains unsupported value "${p}". Allowed: ${PLATFORM_ENUM.join(", ")}` },
+          { status: 400 }
+        );
+      }
+    }
 
     // ---- Media (for kind=IMAGE) ----
     let imageUrl =
@@ -58,9 +73,9 @@ export async function POST(req: NextRequest) {
       if (!imageUrl) {
         return NextResponse.json({ error: "media.imageUrl required for IMAGE" }, { status: 400 });
       }
-      // strip stray trailing chars like ')' or spaces
+      // strip trailing junk like ')' or spaces
       imageUrl = imageUrl.replace(/[)\s]+$/g, "");
-      // basic sanity: https and common image extension (don’t be over-strict)
+      // basic sanity: https and image-like extension
       if (!/^https:\/\/.+/i.test(imageUrl) || !/\.(jpe?g|png|webp)(\?.*)?$/i.test(imageUrl)) {
         return NextResponse.json(
           { error: "Provide a valid https image URL (jpg/png/webp)" },
@@ -68,21 +83,20 @@ export async function POST(req: NextRequest) {
         );
       }
     } else {
-      // extend for VIDEO/etc later
       imageUrl = imageUrl || "";
     }
 
-    // ---- Status: default to SCHEDULED so cron can pick it up ----
+    // ---- Status default: SCHEDULED so cron can pick it up ----
     const status = body.status ?? "SCHEDULED";
 
     const post = await PlannedPost.create({
       userEmail: body.userEmail,
-      platforms,
+      platforms,               // ✅ uppercase, matches schema enum
       status,
       kind: body.kind,
       caption: body.caption,
       media: imageUrl ? { imageUrl } : body.media ?? null,
-      scheduledAt: when, // <-- store the UTC date directly
+      scheduledAt: when,       // store UTC date directly
     });
 
     return NextResponse.json({ ok: true, post }, { status: 201 });

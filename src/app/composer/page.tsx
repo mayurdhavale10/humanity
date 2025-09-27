@@ -65,7 +65,7 @@ export default function ComposerPage() {
       const body = {
         userEmail: email,
         // normalize platforms to lowercase for backend matching
-        platforms: platforms.map((p) => p.toLowerCase()),
+        platforms, // keep "INSTAGRAM" etc. to match schema enum
         status: "SCHEDULED", // or "QUEUED" — either works with your cron
         kind: "IMAGE",
         caption,
