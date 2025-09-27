@@ -2,22 +2,23 @@
 
 import { useState } from "react";
 
-type Platform = "INSTAGRAM"; // expand later: "X" | "LINKEDIN"
+type Platform = "INSTAGRAM";
 
-// ✅ Correct: local "YYYY-MM-DDTHH:mm" -> UTC ISO without double-shift
-function toUtcIso(dateTimeLocal: string) {
-  // Example input: "2025-09-27T08:15" (interpreted as local time)
-  // new Date(local) makes a Date at local time; .toISOString() converts to UTC.
-  return new Date(dateTimeLocal).toISOString();
+function toUTCISOStringLocal(dateTimeLocal: string) {
+  const d = new Date(dateTimeLocal);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString();
 }
+
+// A handy sample image you mentioned
+const SAMPLE_IMG = "https://res.cloudinary.com/dqiolmf7y/image/upload/v1758908532/humanity/rdr_2-removebg-preview.png";
 
 export default function ComposerPage() {
   const [caption, setCaption] = useState("Hello from Humanity 🚀");
-  const [imageUrl, setImageUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState(SAMPLE_IMG);
   const [uploading, setUploading] = useState(false);
   const [platforms, setPlatforms] = useState<Platform[]>(["INSTAGRAM"]);
   const [when, setWhen] = useState<string>(() => {
-    const d = new Date(Date.now() + 5 * 60 * 1000); // +5 min default
+    const d = new Date(Date.now() + 5 * 60 * 1000);
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
       d.getHours()
@@ -38,7 +39,7 @@ export default function ComposerPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Upload failed");
       if (!data?.url) throw new Error("Upload did not return a URL");
-      setImageUrl(String(data.url));
+      setImageUrl(data.url);
       setMessage("✅ Uploaded");
     } catch (e: any) {
       setMessage(`❌ ${e.message || e}`);
@@ -48,31 +49,28 @@ export default function ComposerPage() {
   }
 
   function togglePlatform(p: Platform) {
-    setPlatforms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
+    setPlatforms((prev) =>
+      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
+    );
   }
 
+  // Normal schedule flow (cron will pick it up)
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setMessage(null);
     try {
-      if (!imageUrl.trim()) throw new Error("Add an image (upload or paste URL)");
-      if (!when) throw new Error("Pick a schedule time");
-
-      // ✅ FIX: use correct UTC conversion (no manual offset math)
-      const scheduledAt = toUtcIso(when);
-
+      if (!imageUrl) throw new Error("Add an image (upload or paste URL)");
+      const scheduledAt = toUTCISOStringLocal(when);
       const body = {
         userEmail: email,
-        // normalize platforms to lowercase for backend matching
-        platforms, // keep "INSTAGRAM" etc. to match schema enum
-        status: "SCHEDULED", // or "QUEUED" — either works with your cron
+        platforms,
+        status: "QUEUED",
         kind: "IMAGE",
         caption,
-        media: { imageUrl: imageUrl.trim() },
-        scheduledAt, // stored as UTC ISO on the server
+        media: { imageUrl },
+        scheduledAt,
       };
-
       const res = await fetch("/api/planned-posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -80,11 +78,30 @@ export default function ComposerPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to create planned post");
-
       setMessage("✅ Scheduled! It will be picked up by the cron runner.");
-      // Optional resets:
-      // setCaption("");
-      // keep imageUrl so you can schedule multiple with same image if you wish
+    } catch (e: any) {
+      setMessage(`❌ ${e.message || e}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // NEW: launch quick (server proxy calls run-now)
+  async function launchQuick() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      if (!imageUrl) throw new Error("Add an image (upload or paste URL)");
+      // for demo we use first selected platform; you can expand as needed
+      const platform = platforms[0] || "INSTAGRAM";
+      const res = await fetch("/api/demo/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, imageUrl, caption }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to launch");
+      setMessage(`✅ Launched now (publishId: ${data.publishId || "ok"})`);
     } catch (e: any) {
       setMessage(`❌ ${e.message || e}`);
     } finally {
@@ -142,7 +159,7 @@ export default function ComposerPage() {
             onChange={(e) => setWhen(e.target.value)}
           />
           <p className="text-xs text-gray-500">
-            Stored as <b>UTC</b> automatically. Your local: {when.replace("T", " ")}.
+            Stored as UTC automatically. Your local: {when.replace("T", " ")}.
           </p>
         </div>
 
@@ -166,15 +183,27 @@ export default function ComposerPage() {
             disabled={saving || uploading}
             className="px-4 py-2 rounded-md bg-black text-white disabled:opacity-50"
           >
-            {saving ? "Scheduling..." : "Schedule"}
+            {saving ? "Working..." : "Schedule"}
           </button>
+
+          {/* NEW: Launch quick (demo) */}
+          <button
+            type="button"
+            onClick={launchQuick}
+            disabled={saving || uploading}
+            className="px-4 py-2 rounded-md bg-indigo-600 text-white disabled:opacity-50"
+            title="Create a post and publish immediately"
+          >
+            {saving ? "Working..." : "Launch quick (demo)"}
+          </button>
+
           {message && <span className="text-sm">{message}</span>}
         </div>
       </form>
 
       <div className="text-sm">
         Tip: watch <code>/api/planned-posts?email=demo@local.dev</code> and{" "}
-        <code>/api/cron/run?secret=***</code> logs to see it move from QUEUED ➜ PUBLISHED.
+        <code>/api/cron/run?secret=***</code> logs to see QUEUED ➜ PUBLISHED.
       </div>
     </main>
   );
