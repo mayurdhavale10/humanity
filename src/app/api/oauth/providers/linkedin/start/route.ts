@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 function getRedirectUri() {
   return (
@@ -11,28 +11,35 @@ function getRedirectUri() {
   );
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const clientId = process.env.LINKEDIN_CLIENT_ID;
   const redirectUri = getRedirectUri();
-
   if (!clientId || !redirectUri) {
     return NextResponse.json(
-      { error: "Missing LINKEDIN_CLIENT_ID or redirect URI (set LINKEDIN_REDIRECT_URI or NEXT_PUBLIC_BASE_URL)" },
+      { error: "Missing LINKEDIN_CLIENT_ID or LINKEDIN_REDIRECT_URI / NEXT_PUBLIC_BASE_URL" },
       { status: 500 }
     );
   }
 
-  // Minimal scopes for personal posting: r_liteprofile w_member_social
-  const scope = encodeURIComponent("r_liteprofile w_member_social");
-  const state = Math.random().toString(36).slice(2);
+  // Minimum scopes for posting from a member account
+  const scope = [
+    "w_member_social",   // create posts
+    "openid", "profile", "email" // optional but helpful
+  ].join(" ");
 
-  const url =
+  const state = Math.random().toString(36).slice(2);
+  const authUrl =
     `https://www.linkedin.com/oauth/v2/authorization` +
     `?response_type=code` +
     `&client_id=${encodeURIComponent(clientId)}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&scope=${scope}` +
+    `&scope=${encodeURIComponent(scope)}` +
     `&state=${encodeURIComponent(state)}`;
 
-  return NextResponse.redirect(url);
+  // Optional quick debug: /start?debug=1 to see what we’ll use
+  if (new URL(req.url).searchParams.get("debug") === "1") {
+    return NextResponse.json({ authUrl, redirectUri, scope });
+  }
+
+  return NextResponse.redirect(authUrl);
 }
