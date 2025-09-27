@@ -17,6 +17,7 @@
     "@fullcalendar/timegrid": "^6.1.19",
     "bullmq": "^5.58.7",
     "cloudinary": "^2.7.0",
+    "framer-motion": "^12.23.22",
     "ioredis": "^5.7.0",
     "mongoose": "^8.18.1",
     "next": "15.5.3",
