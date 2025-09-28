@@ -1,53 +1,84 @@
-// src/app/api/oauth/providers/x/start/route.ts
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 
-const CLIENT_ID = process.env.X_CLIENT_ID!;
 const BASE_URL =
-  process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") || "http://localhost:3000";
-const REDIRECT_URI = `${BASE_URL}/api/oauth/providers/x/callback`;
-const SCOPE = ["tweet.write", "tweet.read", "users.read", "offline.access"].join(" ");
+  process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") ||
+  "http://localhost:3000";
+const X_CLIENT_ID = process.env.X_CLIENT_ID || "";
 
-// base64url from ArrayBuffer
-function base64url(ab: ArrayBuffer) {
-  return Buffer.from(new Uint8Array(ab))
+function b64url(buf: ArrayBuffer) {
+  return Buffer.from(new Uint8Array(buf))
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
 }
 
+async function sha256(input: string) {
+  // TextEncoder().encode returns Uint8Array; pass its .buffer to digest
+  const data = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest("SHA-256", data.buffer);
+  return new Uint8Array(hash);
+}
+
+function makeRandom(len = 43) {
+  const alphabet =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
+  let out = "";
+  for (let i = 0; i < len; i++) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
+}
+
 export async function GET() {
-  // 1) Generate code_verifier (43–128 chars URL-safe)
-  const verifierBytes = crypto.getRandomValues(new Uint8Array(32));
-  const code_verifier = base64url(verifierBytes.buffer);
+  if (!X_CLIENT_ID) {
+    return NextResponse.json(
+      { error: "X_CLIENT_ID missing" },
+      { status: 500 }
+    );
+  }
 
-  // 2) code_challenge = BASE64URL(SHA256(code_verifier))
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(code_verifier) // pass ArrayBuffer of the string
-  );
-  const code_challenge = base64url(digest);
+  // Build PKCE pieces
+  const state = makeRandom(32);
+  const code_verifier = makeRandom(64);
+  const hash = await sha256(code_verifier);
+  const code_challenge = b64url(hash.buffer);
 
-  // 3) Build authorize URL (PKCE S256)
+  const redirect_uri = `${BASE_URL}/api/oauth/providers/x/callback`;
+  const scope = [
+    "tweet.read",
+    "tweet.write",
+    "users.read",
+    "offline.access",
+  ].join(" ");
+
   const authUrl = new URL("https://twitter.com/i/oauth2/authorize");
   authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("client_id", CLIENT_ID);
-  authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
-  authUrl.searchParams.set("scope", SCOPE);
-  authUrl.searchParams.set("state", crypto.randomUUID());
+  authUrl.searchParams.set("client_id", X_CLIENT_ID);
+  authUrl.searchParams.set("redirect_uri", redirect_uri);
+  authUrl.searchParams.set("scope", scope);
+  authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("code_challenge", code_challenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
 
-  // 4) Store verifier in a short-lived, httpOnly cookie
-  const res = NextResponse.redirect(authUrl.toString(), 302);
-  res.cookies.set("x_code_verifier", code_verifier, {
+  // Set short-lived, httpOnly cookies to read back in callback
+  const res = NextResponse.redirect(authUrl.toString(), { status: 302 });
+  res.cookies.set("x_oauth_state", state, {
     httpOnly: true,
     secure: true,
     sameSite: "lax",
-    maxAge: 600, // 10 minutes
     path: "/",
+    maxAge: 10 * 60,
+  });
+  res.cookies.set("x_oauth_code_verifier", code_verifier, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 10 * 60,
   });
   return res;
 }
