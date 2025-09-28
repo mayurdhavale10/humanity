@@ -43,7 +43,7 @@ export default function HeroSection() {
 
         {/* Small label */}
         <div className={`label ${isLoaded ? 'label-in' : ''}`}>
-          SOCIAL MEDIA AUTOMATION
+          SOCIAL MEDIA AUTOMINATION
         </div>
 
         {/* Right visual */}
@@ -77,7 +77,7 @@ export default function HeroSection() {
           align-items: center;
           justify-content: center;
           background-color: #8b6b7a;
-          padding: 16px; /* breathing room on small screens */
+          padding: 16px;
         }
         .hero-box {
           width: clamp(340px, 92vw, 1200px);
@@ -92,7 +92,7 @@ export default function HeroSection() {
           overflow: hidden;
         }
 
-        /* Copy block */
+        /* Copy block (desktop/tablet) */
         .copy {
           position: absolute;
           top: 50%;
@@ -100,7 +100,8 @@ export default function HeroSection() {
           z-index: 30;
           opacity: 0;
           transform: translateY(-50%) translateX(-100px);
-          transition: all 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+          transition: opacity 1.2s cubic-bezier(0.22, 1, 0.36, 1),
+            transform 1.2s cubic-bezier(0.22, 1, 0.36, 1);
           transition-delay: 0.3s;
           max-width: calc(100% - 350px);
         }
@@ -137,7 +138,7 @@ export default function HeroSection() {
           margin-top: 10px;
         }
 
-        /* Label */
+        /* Label (desktop/tablet) */
         .label {
           position: absolute;
           top: 30px;
@@ -149,7 +150,8 @@ export default function HeroSection() {
           text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
           opacity: 0;
           transform: translate(200px, 150px);
-          transition: all 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+          transition: opacity 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+            transform 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
           transition-delay: 1.3s;
           z-index: 25;
         }
@@ -158,7 +160,7 @@ export default function HeroSection() {
           transform: translate(0, 0);
         }
 
-        /* Right visual */
+        /* Right visual (desktop/tablet) */
         .right-visual {
           position: absolute;
           top: -10px;
@@ -169,7 +171,8 @@ export default function HeroSection() {
           justify-content: flex-end;
           opacity: 0;
           transform: translateX(100px);
-          transition: all 1.5s cubic-bezier(0.22, 1, 0.36, 1);
+          transition: opacity 1.5s cubic-bezier(0.22, 1, 0.36, 1),
+            transform 1.5s cubic-bezier(0.22, 1, 0.36, 1);
           transition-delay: 0.2s;
         }
         .rv-in {
@@ -217,45 +220,60 @@ export default function HeroSection() {
           box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
         }
 
-        /* ======= MOBILE (≤ 768px) ======= */
+        /* ======= MOBILE (≤ 768px) — keep animations, just lighter ======= */
         @media (max-width: 768px) {
           .hero-root {
             padding: 12px;
           }
           .hero-box {
-            min-height: auto; /* allow content height */
-            padding: 18px 16px 20px 16px; /* inner padding for small screens */
+            min-height: auto;
+            padding: 18px 16px 20px 16px;
           }
-          /* Make layout stacked and centered */
+
+          /* Copy becomes stacked but still animates */
           .copy {
             position: relative;
             top: auto;
             left: auto;
-            transform: translateY(0) translateX(0);
-            opacity: 1; /* avoid weird animations on small devices */
-            transition: none;
             max-width: 100%;
             text-align: center;
-            margin-top: 56px; /* room below TopNav */
+            margin-top: 56px;
+            /* mobile starting state */
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 600ms ease, transform 600ms ease;
+            transition-delay: 120ms;
+          }
+          .copy-in {
+            opacity: 1;
+            transform: translateY(0);
           }
           .headline {
             font-size: clamp(24px, 7vw, 36px);
             margin-bottom: 14px;
           }
           .points {
-            text-align: left; /* keep bullets readable */
+            text-align: left;
             padding: 14px 14px;
           }
+
+          /* Label animates in place on mobile */
           .label {
             left: 16px;
             top: 16px;
             font-size: 11px;
             letter-spacing: 0.12em;
-            opacity: 1;
-            transform: none;
-            transition: none;
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 600ms ease, transform 600ms ease;
+            transition-delay: 220ms;
           }
-          /* Hide heavy right image on phones */
+          .label-in {
+            opacity: 1;
+            transform: translateY(0);
+          }
+
+          /* Heavy right visuals off for perf on small screens */
           .right-visual,
           .inset-wrap {
             display: none;
@@ -282,9 +300,9 @@ export default function HeroSection() {
         /* ======= LIFT HERO ABOVE THE FOLD (desktop/tablet) ======= */
         @media (min-width: 769px) {
           .hero-root {
-            align-items: flex-start;   /* move the whole box up */
-            padding-top: 24px;         /* slight breathing room */
-            min-height: 100dvh;        /* robust viewport height */
+            align-items: flex-start;  /* move the whole box up */
+            padding-top: 24px;        /* slight breathing room */
+            min-height: 100dvh;       /* robust viewport height */
           }
         }
       `}</style>
