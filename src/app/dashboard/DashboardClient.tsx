@@ -1,10 +1,11 @@
-"use client";
+'use client';
 
 import type { Session } from "next-auth";
 import { signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import Image from "next/image";
 import HeroSection from "@/components/landing/HeroSection";
+import HowItWorks from "@/components/landing/howitworks"; // ⬅️ NEW
 
 export default function DashboardClient({ session }: { session: Session | null }) {
   const email = session?.user?.email ?? "";
@@ -66,7 +67,7 @@ export default function DashboardClient({ session }: { session: Session | null }
           </div>
         ) : null}
 
-        {/* Your landing hero, unchanged */}
+        {/* Your landing hero */}
         <section style={{ marginTop: 16, marginBottom: 24 }}>
           <HeroSection />
         </section>
@@ -98,6 +99,11 @@ export default function DashboardClient({ session }: { session: Session | null }
             href="/dashboard/calendar"
             cta="Open"
           />
+        </section>
+
+        {/* NEW: How it works section — placed AFTER the cards to keep your 'quick links after small scroll' behavior */}
+        <section style={{ marginTop: 28, marginBottom: 24 }}>
+          <HowItWorks />
         </section>
       </div>
     </main>
