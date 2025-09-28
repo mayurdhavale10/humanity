@@ -5,7 +5,7 @@ import { signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import Image from "next/image";
 import HeroSection from "@/components/landing/HeroSection";
-import HowItWorks from "@/components/landing/howitworks"; // ⬅️ NEW
+import HowItWorks from "@/components/landing/howitworks";
 
 export default function DashboardClient({ session }: { session: Session | null }) {
   const email = session?.user?.email ?? "";
@@ -13,7 +13,7 @@ export default function DashboardClient({ session }: { session: Session | null }
   return (
     <main style={{ padding: "24px 16px" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-        {/* Header with your logo instead of 'Dashboard' */}
+        {/* Header with your logo */}
         <header
           style={{
             display: "flex",
@@ -27,7 +27,7 @@ export default function DashboardClient({ session }: { session: Session | null }
             <Image
               src="/Humanity_founderslogo.webp"
               alt="Humanity"
-              width={220}    // ↑ bigger logo
+              width={220}
               height={64}
               priority
               style={{ height: 64, width: "auto", objectFit: "contain", borderRadius: 8 }}
@@ -46,7 +46,7 @@ export default function DashboardClient({ session }: { session: Session | null }
                 onClick={() =>
                   signIn("credentials", { email: "demo@local.dev", callbackUrl: "/dashboard" })
                 }
-                style={glassBtn()} // neutral (no purple glow)
+                style={glassBtn()}
                 title="Sign in quickly with a demo account"
               >
                 Continue as demo@local.dev
@@ -59,7 +59,7 @@ export default function DashboardClient({ session }: { session: Session | null }
           </div>
         </header>
 
-        {/* If not signed in, a small glassy tip card */}
+        {/* Tip when logged out */}
         {!session ? (
           <div style={glassCard()}>
             <strong>Tip:</strong> Sign in (demo is fine) to see your scheduled posts and use the
@@ -67,12 +67,12 @@ export default function DashboardClient({ session }: { session: Session | null }
           </div>
         ) : null}
 
-        {/* Your landing hero */}
+        {/* Landing hero */}
         <section style={{ marginTop: 16, marginBottom: 24 }}>
           <HeroSection />
         </section>
 
-        {/* Quick links in glassy cards */}
+        {/* Quick links — keep ONLY the Create a Post card */}
         <section
           style={{
             display: "grid",
@@ -87,21 +87,9 @@ export default function DashboardClient({ session }: { session: Session | null }
             href="/composer"
             cta="Open"
           />
-          <Card
-            title="View Queue"
-            body="See upcoming and past posts."
-            href="/dashboard/queue"
-            cta="Open"
-          />
-          <Card
-            title="Calendar"
-            body="See your posting calendar."
-            href="/dashboard/calendar"
-            cta="Open"
-          />
         </section>
 
-        {/* NEW: How it works section — placed AFTER the cards to keep your 'quick links after small scroll' behavior */}
+        {/* How it works section (unchanged) */}
         <section style={{ marginTop: 28, marginBottom: 24 }}>
           <HowItWorks />
         </section>
@@ -123,7 +111,6 @@ function glassBtn() {
     color: "#fff",
     fontWeight: 800,
     textDecoration: "none",
-    // neutral shadow (no purple glow)
     boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
     transition: "transform .08s ease, box-shadow .15s ease, border-color .2s ease",
     cursor: "pointer",
