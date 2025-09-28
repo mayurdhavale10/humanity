@@ -217,7 +217,7 @@ export default function HeroSection() {
           box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
         }
 
-        /* ======= MOBILE (≤ 768px) — keep animations (lighter) ======= */
+        /* ======= MOBILE (≤ 768px) ======= */
         @media (max-width: 768px) {
           .hero-root {
             padding: 12px;
@@ -226,22 +226,17 @@ export default function HeroSection() {
             min-height: auto; /* allow content height */
             padding: 18px 16px 20px 16px; /* inner padding for small screens */
           }
-          /* Make layout stacked and centered, BUT still animate in */
+          /* Make layout stacked and centered */
           .copy {
             position: relative;
             top: auto;
             left: auto;
+            transform: translateY(0) translateX(0);
+            opacity: 1; /* avoid weird animations on small devices */
+            transition: none;
             max-width: 100%;
             text-align: center;
             margin-top: 56px; /* room below TopNav */
-            opacity: 0;                /* start hidden */
-            transform: translateY(12px); /* small slide */
-            transition: opacity 0.6s ease, transform 0.6s ease;
-            transition-delay: 0.12s;
-          }
-          .copy-in {
-            opacity: 1;
-            transform: translateY(0);
           }
           .headline {
             font-size: clamp(24px, 7vw, 36px);
@@ -256,16 +251,11 @@ export default function HeroSection() {
             top: 16px;
             font-size: 11px;
             letter-spacing: 0.12em;
-            opacity: 0;                 /* start hidden */
-            transform: translateY(8px); /* small slide */
-            transition: opacity 0.6s ease, transform 0.6s ease;
-            transition-delay: 0.22s;
-          }
-          .label-in {
             opacity: 1;
-            transform: translateY(0);
+            transform: none;
+            transition: none;
           }
-          /* Heavy right image stays hidden on phones (perf/clarity) */
+          /* Hide heavy right image on phones */
           .right-visual,
           .inset-wrap {
             display: none;
@@ -286,15 +276,6 @@ export default function HeroSection() {
           }
           .right-visual {
             right: 56px;
-          }
-        }
-
-        /* ======= LIFT HERO ABOVE THE FOLD (desktop/tablet) ======= */
-        @media (min-width: 769px) {
-          .hero-root {
-            align-items: flex-start;   /* move the whole box up */
-            padding-top: 24px;         /* slight breathing room */
-            min-height: 100dvh;        /* robust viewport height */
           }
         }
       `}</style>
