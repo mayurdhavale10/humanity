@@ -278,6 +278,15 @@ export default function HeroSection() {
             right: 56px;
           }
         }
+
+        /* ======= LIFT HERO ABOVE THE FOLD (desktop/tablet) ======= */
+        @media (min-width: 769px) {
+          .hero-root {
+            align-items: flex-start;   /* move the whole box up */
+            padding-top: 24px;         /* slight breathing room */
+            min-height: 100dvh;        /* robust viewport height */
+          }
+        }
       `}</style>
     </div>
   );
