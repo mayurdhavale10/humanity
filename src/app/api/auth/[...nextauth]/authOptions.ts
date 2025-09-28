@@ -1,4 +1,3 @@
-// src/app/api/auth/[...nextauth]/authOptions.ts (recommended path)
 import type { NextAuthOptions } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
