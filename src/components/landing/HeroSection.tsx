@@ -5,28 +5,17 @@ import TopNav from '../common/TopNav';
 
 export default function HeroSection() {
   const [isLoaded, setIsLoaded] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    // Check if mobile on mount
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 768);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-
     const prevBG = document.body.style.backgroundColor;
     const prevMargin = document.body.style.margin;
     document.body.style.backgroundColor = '#8B6B7A';
     document.body.style.margin = '0';
     const timer = setTimeout(() => setIsLoaded(true), 100);
-    
     return () => {
       document.body.style.backgroundColor = prevBG;
       document.body.style.margin = prevMargin;
       clearTimeout(timer);
-      window.removeEventListener('resize', checkMobile);
     };
   }, []);
 
@@ -57,54 +46,39 @@ export default function HeroSection() {
           SOCIAL MEDIA AUTOMATION
         </div>
 
-        {/* Right visual - only show on desktop/tablet */}
-        {!isMobile && (
-          <>
-            <div className={`right-visual ${isLoaded ? 'rv-in' : ''}`}>
-              <div className="right-visual-inner">
-                <img
-                  src="/landing/background_humanityfounders.webp"
-                  alt="Portrait"
-                  className={`right-visual-img ${isLoaded ? 'img-in' : ''}`}
-                  loading="lazy"
-                />
-                <div className="right-visual-overlay" />
-              </div>
-            </div>
-
-            {/* Inset image */}
-            <div className="inset-wrap">
-              <img
-                src="/landing/inset_image.webp"
-                alt="Inset"
-                className="inset-img"
-                loading="lazy"
-              />
-            </div>
-          </>
-        )}
-
-        {/* Mobile-only background decoration */}
-        {isMobile && (
-          <div className="mobile-bg-decoration">
-            <div className="mobile-gradient-1"></div>
-            <div className="mobile-gradient-2"></div>
+        {/* Right visual */}
+        <div className={`right-visual ${isLoaded ? 'rv-in' : ''}`}>
+          <div className="right-visual-inner">
+            <img
+              src="/landing/background_humanityfounders.webp"
+              alt="Portrait"
+              className={`right-visual-img ${isLoaded ? 'img-in' : ''}`}
+            />
+            <div className="right-visual-overlay" />
           </div>
-        )}
+        </div>
+
+        {/* Inset image */}
+        <div className="inset-wrap">
+          <img
+            src="/landing/inset_image.webp"
+            alt="Inset"
+            className="inset-img"
+          />
+        </div>
       </div>
 
+      {/* responsive styles */}
       <style jsx>{`
         .hero-root {
           min-height: 100vh;
-          min-height: 100dvh; /* dynamic viewport height for mobile */
           width: 100%;
           display: flex;
           align-items: center;
           justify-content: center;
           background-color: #8b6b7a;
-          padding: 16px;
+          padding: 16px; /* breathing room on small screens */
         }
-        
         .hero-box {
           width: clamp(340px, 92vw, 1200px);
           min-height: 600px;
@@ -134,7 +108,6 @@ export default function HeroSection() {
           opacity: 1;
           transform: translateY(-50%) translateX(0);
         }
-        
         .headline {
           font-size: clamp(28px, 6vw, 64px);
           font-weight: 900;
@@ -146,15 +119,12 @@ export default function HeroSection() {
           font-family: system-ui, -apple-system, sans-serif;
           margin-bottom: 20px;
         }
-        
         .points {
           background-color: rgba(0, 0, 0, 0.6);
           padding: 16px 18px;
           border-radius: 8px;
           border: 1px solid rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(10px);
         }
-        
         .point {
           font-size: clamp(15px, 2.5vw, 20px);
           font-weight: 600;
@@ -206,12 +176,10 @@ export default function HeroSection() {
           opacity: 1;
           transform: translateX(0);
         }
-        
         .right-visual-inner {
           position: relative;
           height: calc(100% + 20px);
         }
-        
         .right-visual-img {
           height: 100%;
           width: auto;
@@ -224,7 +192,6 @@ export default function HeroSection() {
         .img-in {
           transform: scale(1);
         }
-        
         .right-visual-overlay {
           position: absolute;
           inset: 0;
@@ -242,7 +209,6 @@ export default function HeroSection() {
           z-index: 20;
           overflow: visible;
         }
-        
         .inset-img {
           width: 100%;
           height: 100%;
@@ -251,88 +217,35 @@ export default function HeroSection() {
           box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
         }
 
-        /* Mobile background decoration */
-        .mobile-bg-decoration {
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-          z-index: 5;
-        }
-        
-        .mobile-gradient-1 {
-          position: absolute;
-          top: -20%;
-          right: -20%;
-          width: 60%;
-          height: 60%;
-          background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
-          border-radius: 50%;
-          filter: blur(20px);
-        }
-        
-        .mobile-gradient-2 {
-          position: absolute;
-          bottom: -30%;
-          left: -30%;
-          width: 80%;
-          height: 80%;
-          background: radial-gradient(circle, rgba(139, 107, 122, 0.3) 0%, transparent 60%);
-          border-radius: 50%;
-          filter: blur(30px);
-        }
-
         /* ======= MOBILE (≤ 768px) ======= */
         @media (max-width: 768px) {
           .hero-root {
-            padding: 8px;
-            align-items: flex-start;
-            padding-top: max(8px, env(safe-area-inset-top));
+            padding: 12px;
           }
-          
           .hero-box {
-            min-height: calc(100vh - 16px);
-            min-height: calc(100dvh - 16px);
-            padding: 16px;
-            width: 100%;
-            max-width: 100%;
-            border-radius: 12px;
+            min-height: auto; /* allow content height */
+            padding: 18px 16px 20px 16px; /* inner padding for small screens */
           }
-          
+          /* Make layout stacked and centered */
           .copy {
             position: relative;
             top: auto;
             left: auto;
-            transform: none;
-            opacity: 1;
+            transform: translateY(0) translateX(0);
+            opacity: 1; /* avoid weird animations on small devices */
             transition: none;
             max-width: 100%;
             text-align: center;
-            margin-top: clamp(60px, 15vh, 100px);
-            padding: 0 8px;
+            margin-top: 56px; /* room below TopNav */
           }
-          
           .headline {
-            font-size: clamp(32px, 8vw, 42px);
-            margin-bottom: 24px;
-            line-height: 1.05;
-            text-align: center;
+            font-size: clamp(24px, 7vw, 36px);
+            margin-bottom: 14px;
           }
-          
           .points {
-            text-align: left;
-            padding: 20px 18px;
-            margin: 0 auto;
-            max-width: 100%;
-            border-radius: 12px;
-            backdrop-filter: blur(20px);
-            background-color: rgba(0, 0, 0, 0.7);
+            text-align: left; /* keep bullets readable */
+            padding: 14px 14px;
           }
-          
-          .point {
-            font-size: clamp(16px, 4vw, 18px);
-            line-height: 1.5;
-          }
-          
           .label {
             left: 16px;
             top: 16px;
@@ -341,43 +254,11 @@ export default function HeroSection() {
             opacity: 1;
             transform: none;
             transition: none;
-            z-index: 35;
           }
-          
-          /* Ensure touch targets are accessible */
-          .copy {
-            min-height: 44px; /* minimum touch target */
-          }
-        }
-
-        /* ======= SMALL MOBILE (≤ 480px) ======= */
-        @media (max-width: 480px) {
-          .hero-root {
-            padding: 4px;
-          }
-          
-          .hero-box {
-            border-radius: 8px;
-            padding: 12px;
-          }
-          
-          .headline {
-            font-size: clamp(28px, 9vw, 36px);
-            margin-bottom: 20px;
-          }
-          
-          .points {
-            padding: 16px 14px;
-          }
-          
-          .point {
-            font-size: clamp(15px, 4.5vw, 17px);
-          }
-          
-          .label {
-            left: 12px;
-            top: 12px;
-            font-size: 10px;
+          /* Hide heavy right image on phones */
+          .right-visual,
+          .inset-wrap {
+            display: none;
           }
         }
 
@@ -387,55 +268,14 @@ export default function HeroSection() {
             left: 32px;
             max-width: calc(100% - 280px);
           }
-          
           .inset-wrap {
             right: 16px;
             width: 200px;
             height: 260px;
             top: 110px;
           }
-          
           .right-visual {
             right: 56px;
-          }
-        }
-
-        /* ======= LARGE SCREENS (≥ 1400px) ======= */
-        @media (min-width: 1400px) {
-          .hero-box {
-            max-width: 1400px;
-          }
-          
-          .copy {
-            left: 60px;
-          }
-          
-          .headline {
-            font-size: clamp(48px, 4vw, 72px);
-          }
-        }
-
-        /* Reduced motion preferences */
-        @media (prefers-reduced-motion: reduce) {
-          .copy,
-          .label,
-          .right-visual,
-          .right-visual-img {
-            transition: none;
-            transform: none;
-            opacity: 1;
-          }
-        }
-
-        /* High contrast mode */
-        @media (prefers-contrast: high) {
-          .points {
-            background-color: rgba(0, 0, 0, 0.9);
-            border: 2px solid rgba(255, 255, 255, 0.3);
-          }
-          
-          .hero-box {
-            border: 2px solid rgba(255, 255, 255, 0.2);
           }
         }
       `}</style>
