@@ -1,35 +1,55 @@
 // src/app/api/planned-posts/route.ts
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic"; // avoid any static optimization on Vercel
+export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongo";
-import PlannedPost, { IPlannedPost } from "@/models/PlannedPost";
+import PlannedPost from "@/models/PlannedPost";
+import { getEffectiveEmail } from "@/lib/auth";
 
-// Keep this aligned with your Mongoose enum in PlannedPost schema
+// Keep aligned with your Mongoose enum
 const PLATFORM_ENUM = ["INSTAGRAM", "X", "LINKEDIN"] as const;
-type PlatformEnum = typeof PLATFORM_ENUM[number];
+type PlatformEnum = (typeof PLATFORM_ENUM)[number];
 
-// Allow preflight / health checks
 export async function OPTIONS() {
   return NextResponse.json({ ok: true });
 }
 
-// POST /api/planned-posts -> create a planned post
+// POST /api/planned-posts → create (Demo or User auto-selected)
 export async function POST(req: NextRequest) {
   try {
     await dbConnect();
-    const body = (await req.json()) as Partial<IPlannedPost> & {
+
+    const body = (await req.json().catch(() => ({}))) as {
+      userEmail?: string;
+      platforms?: string[];
+      status?: string;
+      kind?: "IMAGE" | "TEXT";
+      caption?: string;
       media?: { imageUrl?: string };
       imageUrl?: string;
       mediaUrl?: string;
-      platforms?: string[];
+      scheduledAt?: string | Date;
+      useDemo?: boolean;
     };
 
-    // ---- Required fields ----
-    if (!body?.userEmail) {
-      return NextResponse.json({ error: "userEmail required" }, { status: 400 });
+    // Decide Demo vs User
+    const url = new URL(req.url);
+    const useDemo = url.searchParams.get("demo") === "1" || body?.useDemo === true;
+
+    const userEmail = await getEffectiveEmail({
+      useDemo,
+      fallbackBodyEmail: body?.userEmail, // optional fallback
+    });
+
+    if (!userEmail) {
+      return NextResponse.json(
+        { error: "Not signed in and no demo mode. Add ?demo=1 or sign in." },
+        { status: 401 }
+      );
     }
+
+    // Required fields
     if (!Array.isArray(body?.platforms) || body.platforms.length === 0) {
       return NextResponse.json({ error: "platforms required" }, { status: 400 });
     }
@@ -43,26 +63,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "scheduledAt required" }, { status: 400 });
     }
 
-    // ---- Parse scheduledAt (UI sends UTC ISO; store as Date) ----
+    // Parse scheduledAt
     const when = new Date(body.scheduledAt as any);
     if (isNaN(when.getTime())) {
       return NextResponse.json({ error: "scheduledAt invalid" }, { status: 400 });
     }
 
-    // ---- Normalize & validate platforms against schema enum (UPPERCASE) ----
-    const platforms = (body.platforms as string[])
-      .map((p) => String(p).toUpperCase()) as PlatformEnum[];
-
+    // Normalize & validate platforms (UPPERCASE)
+    const platforms = body.platforms.map((p) => String(p).toUpperCase()) as PlatformEnum[];
     for (const p of platforms) {
       if (!PLATFORM_ENUM.includes(p)) {
         return NextResponse.json(
-          { error: `platforms contains unsupported value "${p}". Allowed: ${PLATFORM_ENUM.join(", ")}` },
+          { error: `Unsupported platform "${p}". Allowed: ${PLATFORM_ENUM.join(", ")}` },
           { status: 400 }
         );
       }
     }
 
-    // ---- Media (for kind=IMAGE) ----
+    // Media parsing (for IMAGE kind)
     let imageUrl =
       body.media?.imageUrl?.trim() ??
       body.imageUrl?.trim() ??
@@ -73,9 +91,7 @@ export async function POST(req: NextRequest) {
       if (!imageUrl) {
         return NextResponse.json({ error: "media.imageUrl required for IMAGE" }, { status: 400 });
       }
-      // strip trailing junk like ')' or spaces
-      imageUrl = imageUrl.replace(/[)\s]+$/g, "");
-      // basic sanity: https and image-like extension
+      imageUrl = imageUrl.replace(/[)\s]+$/g, ""); // strip stray chars
       if (!/^https:\/\/.+/i.test(imageUrl) || !/\.(jpe?g|png|webp)(\?.*)?$/i.test(imageUrl)) {
         return NextResponse.json(
           { error: "Provide a valid https image URL (jpg/png/webp)" },
@@ -86,17 +102,17 @@ export async function POST(req: NextRequest) {
       imageUrl = imageUrl || "";
     }
 
-    // ---- Status default: SCHEDULED so cron can pick it up ----
+    // Default status SCHEDULED so cron can pick it up (or QUEUED if you prefer)
     const status = body.status ?? "SCHEDULED";
 
     const post = await PlannedPost.create({
-      userEmail: body.userEmail,
-      platforms,               // ✅ uppercase, matches schema enum
+      userEmail,
+      platforms, // UPPERCASE
       status,
       kind: body.kind,
       caption: body.caption,
       media: imageUrl ? { imageUrl } : body.media ?? null,
-      scheduledAt: when,       // store UTC date directly
+      scheduledAt: when,
     });
 
     return NextResponse.json({ ok: true, post }, { status: 201 });
@@ -108,22 +124,29 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET /api/planned-posts?email=demo@local.dev -> list posts for a user
+// GET /api/planned-posts?email=... OR /api/planned-posts?demo=1
+// If no email query, we resolve Demo vs User automatically via session.
 export async function GET(req: NextRequest) {
   try {
     await dbConnect();
-    const { searchParams } = new URL(req.url);
-    const email = searchParams.get("email");
+    const url = new URL(req.url);
+    const queryEmail = url.searchParams.get("email") || "";
+    const useDemo = url.searchParams.get("demo") === "1";
 
-    if (!email) {
-      return NextResponse.json({ error: "Missing ?email=" }, { status: 400 });
+    const userEmail =
+      queryEmail ||
+      (await getEffectiveEmail({
+        useDemo,
+      }));
+
+    if (!userEmail) {
+      return NextResponse.json(
+        { error: "Missing email and not authenticated (add ?demo=1 or sign in)" },
+        { status: 401 }
+      );
     }
 
-    const posts = await PlannedPost.find({ userEmail: email })
-      .sort({ createdAt: -1 })
-      .lean()
-      .exec();
-
+    const posts = await PlannedPost.find({ userEmail }).sort({ createdAt: -1 }).lean().exec();
     return NextResponse.json({ ok: true, posts });
   } catch (err: any) {
     return NextResponse.json(

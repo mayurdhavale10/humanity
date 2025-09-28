@@ -1,7 +1,6 @@
-// src/app/composer/page.tsx
-"use client";
+export const dynamic = "force-dynamic";
 
-import Composer from "../../components/composer/Composer";
+import Composer from "@/components/composer/Composer";
 
 export default function ComposerPage() {
   return <Composer />;

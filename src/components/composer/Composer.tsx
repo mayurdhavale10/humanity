@@ -2,12 +2,14 @@
 "use client";
 
 import { useState } from "react";
+import { useSession, signIn } from "next-auth/react";
 import ImageUpload from "./ImageUpload";
 import CaptionEditor from "./CaptionEditor";
 import ScheduleInput from "./ScheduleInput";
 import PlatformToggles from "./PlatformToggles";
 import ActionButtons from "./ActionButtons";
 import StatusMessage from "./StatusMessage";
+import ConnectAccounts from "@/components/account/ConnectAccounts";
 
 export type Platform = "INSTAGRAM" | "LINKEDIN" | "X";
 
@@ -16,12 +18,13 @@ function toUTCISOStringLocal(dateTimeLocal: string) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString();
 }
 
-// Build absolute URL to public sample image
-const BASE =
-  (process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") as string) || "";
+const BASE = (process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "") as string) || "";
 const SAMPLE_IMG = `${BASE}/samples/dummy_post.png`;
 
 export default function Composer() {
+  const { data: session, status } = useSession();
+  const email = session?.user?.email || "";
+
   const [caption, setCaption] = useState("Hello from Humanity 🚀");
   const [imageUrl, setImageUrl] = useState(SAMPLE_IMG);
   const [uploading, setUploading] = useState(false);
@@ -36,7 +39,43 @@ export default function Composer() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const email = "demo@local.dev"; // TODO: replace with NextAuth session email
+  // NEW: Use demo accounts toggle
+  const [useDemo, setUseDemo] = useState(false);
+
+  // Gate: require sign-in (demo button provided)
+  if (status !== "authenticated") {
+    return (
+      <main style={{ padding: 24, color: "#fff", minHeight: "100vh", background: "#8B6B7A" }}>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>Login to continue</h1>
+        <p style={{ opacity: 0.9, marginTop: 8 }}>
+          Use the demo button below or sign in with any email on the NextAuth page.
+        </p>
+        <button
+          onClick={() =>
+            signIn("credentials", {
+              email: "demo@local.dev",
+              callbackUrl: "/composer",
+            })
+          }
+          style={{
+            marginTop: 12,
+            padding: "10px 14px",
+            borderRadius: 8,
+            border: "1px solid rgba(255,255,255,.25)",
+            background: "rgba(0,0,0,.25)",
+            color: "#fff",
+            cursor: "pointer",
+            fontWeight: 700,
+          }}
+        >
+          Continue as demo@local.dev
+        </button>
+        <div style={{ opacity: 0.8, marginTop: 10, fontSize: 13 }}>
+          Or open <code>/api/auth/signin</code> to enter another email.
+        </div>
+      </main>
+    );
+  }
 
   async function handleUpload(file: File) {
     setUploading(true);
@@ -58,12 +97,10 @@ export default function Composer() {
   }
 
   function togglePlatform(p: Platform) {
-    setPlatforms((prev) =>
-      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
-    );
+    setPlatforms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
   }
 
-  // Normal schedule flow (cron will pick it up)
+  // Schedule → /api/planned-posts (includes useDemo)
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -72,13 +109,14 @@ export default function Composer() {
       if (!imageUrl) throw new Error("Add an image (upload or paste URL)");
       const scheduledAt = toUTCISOStringLocal(when);
       const body = {
-        userEmail: email,
-        platforms, // keep UPPERCASE as selected
+        userEmail: email,            // server will ignore if useDemo=true
+        platforms,                   // UPPERCASE already
         status: "QUEUED",
         kind: "IMAGE",
         caption,
         media: { imageUrl },
         scheduledAt,
+        useDemo,                     // ✅ NEW
       };
       const res = await fetch("/api/planned-posts", {
         method: "POST",
@@ -95,7 +133,7 @@ export default function Composer() {
     }
   }
 
-  // Launch quick (server proxy calls run-now) — send ALL selected platforms
+  // Launch quick → always uses demo endpoint (your recruiter flow)
   async function launchQuick() {
     setSaving(true);
     setMessage(null);
@@ -106,12 +144,11 @@ export default function Composer() {
       const res = await fetch("/api/demo/launch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platforms, imageUrl, caption }), // send ALL
+        body: JSON.stringify({ platforms, imageUrl, caption }), // demo endpoint publishes immediately
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to launch");
 
-      // show per-platform ids if present
       const ids = data.publishIds
         ? Object.entries(data.publishIds)
             .map(([k, v]) => `${k}:${v as string}`)
@@ -125,6 +162,10 @@ export default function Composer() {
       setSaving(false);
     }
   }
+
+  const plannedPostsTipHref = useDemo
+    ? `/api/planned-posts?demo=1`
+    : `/api/planned-posts?email=${encodeURIComponent(email || "demo@local.dev")}`;
 
   return (
     <main
@@ -163,15 +204,14 @@ export default function Composer() {
         </p>
       </div>
 
-      {/* Main Form Container */}
+      {/* Main Form */}
       <form
         onSubmit={submit}
         style={{
           backgroundColor: "#B5979A",
           borderRadius: "12px",
           padding: "32px",
-          boxShadow:
-            "0 10px 30px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15)",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15)",
           border: "1px solid rgba(255,255,255,0.08)",
           display: "grid",
           gap: "24px",
@@ -188,12 +228,30 @@ export default function Composer() {
 
         <ScheduleInput when={when} onWhenChange={setWhen} />
 
-        <PlatformToggles
-          platforms={platforms}
-          onTogglePlatform={togglePlatform}
-        />
+        <PlatformToggles platforms={platforms} onTogglePlatform={togglePlatform} />
 
-        {/* Actions + Verification links row */}
+        {/* Connect / OAuth */}
+        <ConnectAccounts />
+
+        {/* NEW: Use Demo toggle */}
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            color: "#fff",
+            fontWeight: 600,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={useDemo}
+            onChange={(e) => setUseDemo(e.target.checked)}
+          />
+          Use Demo Accounts (preconnected)
+        </label>
+
+        {/* Actions + links */}
         <div style={{ display: "grid", gap: "16px" }}>
           <ActionButtons
             onSubmit={submit}
@@ -202,7 +260,7 @@ export default function Composer() {
             uploading={uploading}
           />
 
-          {/* Verification / Recruiter Links */}
+          {/* Verification Links */}
           <aside
             style={{
               marginTop: "4px",
@@ -245,8 +303,7 @@ export default function Composer() {
               }}
             >
               After you click <strong>Schedule Post</strong> or{" "}
-              <strong>Launch Quick (Demo)</strong>, you can confirm the post on
-              these profiles:
+              <strong>Launch Quick (Demo)</strong>, you can confirm the post on these profiles:
             </div>
             <ul
               style={{
@@ -257,7 +314,6 @@ export default function Composer() {
                 gap: "6px",
               }}
             >
-              {/* Instagram */}
               <li>
                 <a
                   href="https://www.instagram.com/_mmayurr/"
@@ -283,26 +339,13 @@ export default function Composer() {
                       background: "#E4405F",
                     }}
                   />
-                  Instagram: _mmayurr
-                  <span
-                    aria-hidden
-                    style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}
-                  >
-                    ↗
-                  </span>
+                  Instagram: _mmayurr <span aria-hidden style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}>↗</span>
                 </a>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "rgba(255,255,255,0.75)",
-                    marginTop: 4,
-                  }}
-                >
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 }}>
                   Click to see the automated post on your feed.
                 </div>
               </li>
 
-              {/* LinkedIn */}
               <li>
                 <a
                   href="https://www.linkedin.com/in/mayur-dhavale-b98584387/"
@@ -329,26 +372,14 @@ export default function Composer() {
                       background: "#0A66C2",
                     }}
                   />
-                  LinkedIn: mayur-dhavale-b98584387
-                  <span
-                    aria-hidden
-                    style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}
-                  >
-                    ↗
-                  </span>
+                  LinkedIn: mayur-dhavale-b98584387{" "}
+                  <span aria-hidden style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}>↗</span>
                 </a>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "rgba(255,255,255,0.75)",
-                    marginTop: 4,
-                  }}
-                >
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 }}>
                   Click to verify the cross-post on your LinkedIn.
                 </div>
               </li>
 
-              {/* X (Twitter) */}
               <li>
                 <a
                   href="https://x.com/Mayur_dhavalee"
@@ -375,21 +406,10 @@ export default function Composer() {
                       background: "#1D9BF0",
                     }}
                   />
-                  X (Twitter): @Mayur_dhavalee
-                  <span
-                    aria-hidden
-                    style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}
-                  >
-                    ↗
-                  </span>
+                  X (Twitter): @Mayur_dhavalee{" "}
+                  <span aria-hidden style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}>↗</span>
                 </a>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "rgba(255,255,255,0.75)",
-                    marginTop: 4,
-                  }}
-                >
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 }}>
                   Click to confirm the tweet was posted.
                 </div>
               </li>
@@ -412,27 +432,9 @@ export default function Composer() {
           fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", monospace',
         }}
       >
-        <strong>Tip:</strong> Watch{" "}
-        <code
-          style={{
-            backgroundColor: "rgba(0,0,0,0.2)",
-            padding: "2px 6px",
-            borderRadius: "4px",
-          }}
-        >
-          /api/planned-posts?email=demo@local.dev
-        </code>{" "}
-        and{" "}
-        <code
-          style={{
-            backgroundColor: "rgba(0,0,0,0.2)",
-            padding: "2px 6px",
-            borderRadius: "4px",
-          }}
-        >
-          /api/cron/run?secret=***
-        </code>{" "}
-        logs to see QUEUED ➜ PUBLISHED.
+        <strong>Tip:</strong>{" "}
+        <code>{plannedPostsTipHref}</code> and{" "}
+        <code>/api/cron/run?secret=***</code> logs to see QUEUED ➜ PUBLISHED.
       </div>
     </main>
   );
