@@ -5,226 +5,440 @@ import TopNav from '../common/TopNav';
 
 export default function HeroSection() {
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
-  // Keep deep-navy page background + remove default body margin
   useEffect(() => {
+    // Check if mobile on mount
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
     const prevBG = document.body.style.backgroundColor;
     const prevMargin = document.body.style.margin;
-    document.body.style.backgroundColor = '#8B6B7A'; // Deep Mauve
+    document.body.style.backgroundColor = '#8B6B7A';
     document.body.style.margin = '0';
-    
-    // Trigger animations after component mounts
-    const timer = setTimeout(() => {
-      setIsLoaded(true);
-    }, 100);
+    const timer = setTimeout(() => setIsLoaded(true), 100);
     
     return () => {
       document.body.style.backgroundColor = prevBG;
       document.body.style.margin = prevMargin;
       clearTimeout(timer);
+      window.removeEventListener('resize', checkMobile);
     };
   }, []);
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        width: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#8B6B7A', // Deep Mauve
-      }}
-    >
-      {/* Outer box */}
-      <div
-        style={{
-          width: 'clamp(340px, 92vw, 1200px)',
-          minHeight: '600px',
-          backgroundColor: '#B5979A', // Dusty Rose
-          borderRadius: 0,
-          boxSizing: 'border-box',
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15)',
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Top Navigation */}
+    <div className="hero-root">
+      <div className="hero-box">
         <TopNav isLoaded={isLoaded} />
 
-        {/* Typography Section - Animated Text with Selective Background */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '40px', // moved further left from 80px
-            zIndex: 30,
-            opacity: isLoaded ? 1 : 0,
-            transform: `translateY(-50%) translateX(${isLoaded ? '0px' : '-100px'})`,
-            transition: 'all 1.2s cubic-bezier(0.22, 1, 0.36, 1)',
-            transitionDelay: '0.3s',
-            maxWidth: 'calc(100% - 350px)', // adjusted for new positioning
-          }}
-        >
-          {/* Main Headline - No Background */}
-          <div
-            style={{
-              fontSize: 'clamp(32px, 6vw, 64px)',
-              fontWeight: 900,
-              lineHeight: 1.1,
-              color: '#FFFFFF',
-              letterSpacing: '-0.02em',
-              textShadow: '0 2px 4px rgba(0,0,0,0.8), 0 4px 12px rgba(0,0,0,0.5)',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              marginBottom: '24px',
-              opacity: isLoaded ? 1 : 0,
-              transform: `translateX(${isLoaded ? '0px' : '-50px'})`,
-              transition: 'all 0.8s ease-out',
-              transitionDelay: '0.5s',
-            }}
-          >
+        {/* Tagline block */}
+        <div className={`copy ${isLoaded ? 'copy-in' : ''}`}>
+          <div className="headline">
             Connects your platforms. <br />
             Automates your schedule.
           </div>
 
-          {/* Feature Points with Background */}
-          <div 
-            style={{
-              // Clean background without blur effect
-              backgroundColor: 'rgba(0, 0, 0, 0.6)',
-              padding: '20px 24px',
-              borderRadius: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-            }}
-          >
-            <div
-              style={{
-                fontSize: 'clamp(16px, 2.5vw, 20px)',
-                fontWeight: 600,
-                color: '#FFFFFF',
-                lineHeight: 1.4,
-                textShadow: '0 2px 4px rgba(0,0,0,0.8)',
-                opacity: isLoaded ? 1 : 0,
-                transform: `translateX(${isLoaded ? '0px' : '-30px'})`,
-                transition: 'all 0.8s ease-out',
-                transitionDelay: '0.7s',
-                marginBottom: '12px',
-              }}
-            >
+          <div className="points">
+            <div className="point">
               Link Instagram, X, and LinkedIn. Schedule once, post everywhere.
             </div>
-
-            <div
-              style={{
-                fontSize: 'clamp(16px, 2.5vw, 20px)',
-                fontWeight: 600,
-                color: '#FFFFFF',
-                lineHeight: 1.4,
-                textShadow: '0 2px 4px rgba(0,0,0,0.8)',
-                opacity: isLoaded ? 1 : 0,
-                transform: `translateX(${isLoaded ? '0px' : '-30px'})`,
-                transition: 'all 0.8s ease-out',
-                transitionDelay: '0.9s',
-              }}
-            >
+            <div className="point">
               One tap to cross-post and schedule across all your platforms.
             </div>
           </div>
         </div>
 
-        {/* Brand/Studio Text - Diagonal Animation from Bottom-Right to Top-Left */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '30px',
-            left: '40px',
-            fontSize: '12px',
-            fontWeight: 500,
-            letterSpacing: '0.15em',
-            color: 'rgba(255,255,255,0.8)',
-            textShadow: '0 2px 4px rgba(0,0,0,0.6)',
-            opacity: isLoaded ? 1 : 0,
-            // Diagonal animation: starts from bottom-right, moves to top-left
-            transform: `translate(${isLoaded ? '0px' : '200px'}, ${isLoaded ? '0px' : '150px'})`,
-            transition: 'all 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-            transitionDelay: '1.3s',
-            zIndex: 25,
-          }}
-        >
+        {/* Small label */}
+        <div className={`label ${isLoaded ? 'label-in' : ''}`}>
           SOCIAL MEDIA AUTOMATION
         </div>
 
-        {/* Image pinned to the RIGHT, increased height, 50px right padding */}
-        <div
-          style={{
-            position: 'absolute',
-            top: -10,        // extend above container by 10px
-            bottom: -10,     // extend below container by 10px
-            right: 80,       // increased to 80px right padding
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            opacity: isLoaded ? 1 : 0,
-            transform: `translateX(${isLoaded ? '0px' : '100px'})`,
-            transition: 'all 1.5s cubic-bezier(0.22, 1, 0.36, 1)',
-            transitionDelay: '0.2s',
-          }}
-        >
-          <div style={{ position: 'relative', height: 'calc(100% + 20px)' }}>
-            <img
-              src="/landing/background_humanityfounders.webp"
-              alt="Portrait"
-              style={{
-                height: '100%',
-                width: 'auto',
-                display: 'block',
-                objectFit: 'cover',
-                transform: `scale(${isLoaded ? '1' : '1.1'})`,
-                transition: 'transform 2s ease-out',
-                transitionDelay: '0.8s',
-              }}
-            />
-            {/* Lighter grey overlay to make background more visible */}
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(58, 46, 50, 0.05)', // Much lighter overlay
-                pointerEvents: 'none',
-              }}
-            />
-          </div>
-        </div>
+        {/* Right visual - only show on desktop/tablet */}
+        {!isMobile && (
+          <>
+            <div className={`right-visual ${isLoaded ? 'rv-in' : ''}`}>
+              <div className="right-visual-inner">
+                <img
+                  src="/landing/background_humanityfounders.webp"
+                  alt="Portrait"
+                  className={`right-visual-img ${isLoaded ? 'img-in' : ''}`}
+                  loading="lazy"
+                />
+                <div className="right-visual-overlay" />
+              </div>
+            </div>
 
-        {/* Inset Image - Overlapping the main image - FIXED POSITIONING AND EDGES */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '120px',    // moved down from 80px
-            right: '20px',   
-            width: '240px',  // increased from 200px
-            height: '300px', // increased from 240px
-            zIndex: 20,
-            overflow: 'visible', // ensure image isn't clipped
-          }}
-        >
-          <img
-            src="/landing/inset_image.webp"
-            alt="Inset"
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              borderRadius: '0px', // completely sharp edges
-              boxShadow: '0 8px 20px rgba(0,0,0,0.3)',
-            }}
-          />
-        </div>
+            {/* Inset image */}
+            <div className="inset-wrap">
+              <img
+                src="/landing/inset_image.webp"
+                alt="Inset"
+                className="inset-img"
+                loading="lazy"
+              />
+            </div>
+          </>
+        )}
+
+        {/* Mobile-only background decoration */}
+        {isMobile && (
+          <div className="mobile-bg-decoration">
+            <div className="mobile-gradient-1"></div>
+            <div className="mobile-gradient-2"></div>
+          </div>
+        )}
       </div>
+
+      <style jsx>{`
+        .hero-root {
+          min-height: 100vh;
+          min-height: 100dvh; /* dynamic viewport height for mobile */
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background-color: #8b6b7a;
+          padding: 16px;
+        }
+        
+        .hero-box {
+          width: clamp(340px, 92vw, 1200px);
+          min-height: 600px;
+          background: #b5979a;
+          border-radius: 0;
+          box-sizing: border-box;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25),
+            0 2px 6px rgba(0, 0, 0, 0.15);
+          position: relative;
+          overflow: hidden;
+        }
+
+        /* Copy block */
+        .copy {
+          position: absolute;
+          top: 50%;
+          left: 40px;
+          z-index: 30;
+          opacity: 0;
+          transform: translateY(-50%) translateX(-100px);
+          transition: all 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+          transition-delay: 0.3s;
+          max-width: calc(100% - 350px);
+        }
+        .copy-in {
+          opacity: 1;
+          transform: translateY(-50%) translateX(0);
+        }
+        
+        .headline {
+          font-size: clamp(28px, 6vw, 64px);
+          font-weight: 900;
+          line-height: 1.1;
+          color: #fff;
+          letter-spacing: -0.02em;
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8),
+            0 4px 12px rgba(0, 0, 0, 0.5);
+          font-family: system-ui, -apple-system, sans-serif;
+          margin-bottom: 20px;
+        }
+        
+        .points {
+          background-color: rgba(0, 0, 0, 0.6);
+          padding: 16px 18px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(10px);
+        }
+        
+        .point {
+          font-size: clamp(15px, 2.5vw, 20px);
+          font-weight: 600;
+          color: #fff;
+          line-height: 1.4;
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+          opacity: 1;
+        }
+        .point + .point {
+          margin-top: 10px;
+        }
+
+        /* Label */
+        .label {
+          position: absolute;
+          top: 30px;
+          left: 40px;
+          font-size: 12px;
+          font-weight: 500;
+          letter-spacing: 0.15em;
+          color: rgba(255, 255, 255, 0.8);
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+          opacity: 0;
+          transform: translate(200px, 150px);
+          transition: all 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+          transition-delay: 1.3s;
+          z-index: 25;
+        }
+        .label-in {
+          opacity: 1;
+          transform: translate(0, 0);
+        }
+
+        /* Right visual */
+        .right-visual {
+          position: absolute;
+          top: -10px;
+          bottom: -10px;
+          right: 80px;
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          opacity: 0;
+          transform: translateX(100px);
+          transition: all 1.5s cubic-bezier(0.22, 1, 0.36, 1);
+          transition-delay: 0.2s;
+        }
+        .rv-in {
+          opacity: 1;
+          transform: translateX(0);
+        }
+        
+        .right-visual-inner {
+          position: relative;
+          height: calc(100% + 20px);
+        }
+        
+        .right-visual-img {
+          height: 100%;
+          width: auto;
+          display: block;
+          object-fit: cover;
+          transform: scale(1.1);
+          transition: transform 2s ease-out;
+          transition-delay: 0.8s;
+        }
+        .img-in {
+          transform: scale(1);
+        }
+        
+        .right-visual-overlay {
+          position: absolute;
+          inset: 0;
+          background-color: rgba(58, 46, 50, 0.05);
+          pointer-events: none;
+        }
+
+        /* Inset image */
+        .inset-wrap {
+          position: absolute;
+          top: 120px;
+          right: 20px;
+          width: 240px;
+          height: 300px;
+          z-index: 20;
+          overflow: visible;
+        }
+        
+        .inset-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: 0;
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Mobile background decoration */
+        .mobile-bg-decoration {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          z-index: 5;
+        }
+        
+        .mobile-gradient-1 {
+          position: absolute;
+          top: -20%;
+          right: -20%;
+          width: 60%;
+          height: 60%;
+          background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+          border-radius: 50%;
+          filter: blur(20px);
+        }
+        
+        .mobile-gradient-2 {
+          position: absolute;
+          bottom: -30%;
+          left: -30%;
+          width: 80%;
+          height: 80%;
+          background: radial-gradient(circle, rgba(139, 107, 122, 0.3) 0%, transparent 60%);
+          border-radius: 50%;
+          filter: blur(30px);
+        }
+
+        /* ======= MOBILE (≤ 768px) ======= */
+        @media (max-width: 768px) {
+          .hero-root {
+            padding: 8px;
+            align-items: flex-start;
+            padding-top: max(8px, env(safe-area-inset-top));
+          }
+          
+          .hero-box {
+            min-height: calc(100vh - 16px);
+            min-height: calc(100dvh - 16px);
+            padding: 16px;
+            width: 100%;
+            max-width: 100%;
+            border-radius: 12px;
+          }
+          
+          .copy {
+            position: relative;
+            top: auto;
+            left: auto;
+            transform: none;
+            opacity: 1;
+            transition: none;
+            max-width: 100%;
+            text-align: center;
+            margin-top: clamp(60px, 15vh, 100px);
+            padding: 0 8px;
+          }
+          
+          .headline {
+            font-size: clamp(32px, 8vw, 42px);
+            margin-bottom: 24px;
+            line-height: 1.05;
+            text-align: center;
+          }
+          
+          .points {
+            text-align: left;
+            padding: 20px 18px;
+            margin: 0 auto;
+            max-width: 100%;
+            border-radius: 12px;
+            backdrop-filter: blur(20px);
+            background-color: rgba(0, 0, 0, 0.7);
+          }
+          
+          .point {
+            font-size: clamp(16px, 4vw, 18px);
+            line-height: 1.5;
+          }
+          
+          .label {
+            left: 16px;
+            top: 16px;
+            font-size: 11px;
+            letter-spacing: 0.12em;
+            opacity: 1;
+            transform: none;
+            transition: none;
+            z-index: 35;
+          }
+          
+          /* Ensure touch targets are accessible */
+          .copy {
+            min-height: 44px; /* minimum touch target */
+          }
+        }
+
+        /* ======= SMALL MOBILE (≤ 480px) ======= */
+        @media (max-width: 480px) {
+          .hero-root {
+            padding: 4px;
+          }
+          
+          .hero-box {
+            border-radius: 8px;
+            padding: 12px;
+          }
+          
+          .headline {
+            font-size: clamp(28px, 9vw, 36px);
+            margin-bottom: 20px;
+          }
+          
+          .points {
+            padding: 16px 14px;
+          }
+          
+          .point {
+            font-size: clamp(15px, 4.5vw, 17px);
+          }
+          
+          .label {
+            left: 12px;
+            top: 12px;
+            font-size: 10px;
+          }
+        }
+
+        /* ======= TABLET (769–1024px) ======= */
+        @media (min-width: 769px) and (max-width: 1024px) {
+          .copy {
+            left: 32px;
+            max-width: calc(100% - 280px);
+          }
+          
+          .inset-wrap {
+            right: 16px;
+            width: 200px;
+            height: 260px;
+            top: 110px;
+          }
+          
+          .right-visual {
+            right: 56px;
+          }
+        }
+
+        /* ======= LARGE SCREENS (≥ 1400px) ======= */
+        @media (min-width: 1400px) {
+          .hero-box {
+            max-width: 1400px;
+          }
+          
+          .copy {
+            left: 60px;
+          }
+          
+          .headline {
+            font-size: clamp(48px, 4vw, 72px);
+          }
+        }
+
+        /* Reduced motion preferences */
+        @media (prefers-reduced-motion: reduce) {
+          .copy,
+          .label,
+          .right-visual,
+          .right-visual-img {
+            transition: none;
+            transform: none;
+            opacity: 1;
+          }
+        }
+
+        /* High contrast mode */
+        @media (prefers-contrast: high) {
+          .points {
+            background-color: rgba(0, 0, 0, 0.9);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+          }
+          
+          .hero-box {
+            border: 2px solid rgba(255, 255, 255, 0.2);
+          }
+        }
+      `}</style>
     </div>
   );
 }
