@@ -21,25 +21,16 @@ export default function HowItWorks() {
           One pipeline. <span className="accent">Three platforms.</span>
         </h2>
 
-        {/* The single illustrative image */}
+        {/* The image (square, no crop) */}
         <div className={`image-wrap ${ready ? 'in' : ''}`}>
-          {/* Use next/image for optimization */}
           <Image
             src="/landing/howitworks.webp"
-            alt="Logos flowing into a funnel and automation container"
+            alt="Instagram, X and LinkedIn flow into a funnel labeled Automisation"
             fill
             sizes="(max-width: 768px) 92vw, (max-width: 1200px) 900px, 1100px"
             priority
             className="image"
           />
-        </div>
-
-        {/* Optional caption/subtitle (matches your glass style) */}
-        <div className={`caption ${ready ? 'in' : ''}`}>
-          <div className="caption-glass">
-            <div className="caption-title">AUTOMISATION</div>
-            <div className="caption-sub">Plan once → publish everywhere</div>
-          </div>
         </div>
       </div>
 
@@ -94,11 +85,11 @@ export default function HowItWorks() {
         .title.in { opacity: 1; transform: translateY(0); }
         .accent { opacity: 0.95; }
 
+        /* Square frame, show full image */
         .image-wrap {
           position: relative;
           width: min(92vw, 1100px);
-          /* keep a friendly aspect ratio for your graphic */
-          aspect-ratio: 16 / 9;
+          aspect-ratio: 1 / 1;            /* your image is square */
           border-radius: 12px;
           overflow: hidden;
           border: 1px solid rgba(255, 255, 255, 0.12);
@@ -109,56 +100,15 @@ export default function HowItWorks() {
           transition: opacity 700ms ease 160ms, transform 700ms ease 160ms;
           margin: 0 auto;
         }
-        .image-wrap.in {
-          opacity: 1;
-          transform: translateY(0);
-        }
+        .image-wrap.in { opacity: 1; transform: translateY(0); }
+
         :global(.image) {
-          object-fit: cover;
-        }
-
-        .caption {
-          width: 100%;
-          display: grid;
-          place-items: center;
-          opacity: 0;
-          transform: translateY(10px);
-          transition: opacity 700ms ease 260ms, transform 700ms ease 260ms;
-          margin-top: 14px;
-        }
-        .caption.in { opacity: 1; transform: translateY(0); }
-
-        .caption-glass {
-          min-width: min(92%, 740px);
-          padding: 12px 16px 14px;
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.08));
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          border-radius: 14px;
-          box-shadow: 0 10px 24px rgba(0,0,0,0.26);
-          text-align: center;
-        }
-        .caption-title {
-          color: #ffffff;
-          font-weight: 900;
-          letter-spacing: 0.18em;
-          font-size: clamp(14px, 2.4vw, 18px);
-          text-shadow: 0 2px 6px rgba(0,0,0,0.55);
-        }
-        .caption-sub {
-          margin-top: 4px;
-          color: rgba(255,255,255,0.9);
-          font-weight: 600;
-          font-size: clamp(12px, 2.2vw, 16px);
-          letter-spacing: 0.02em;
-          text-shadow: 0 2px 5px rgba(0,0,0,0.45);
+          object-fit: contain;             /* no cropping */
         }
 
         @media (max-width: 480px) {
           .hiw-box { padding: 24px 12px 22px; }
           .image-wrap { border-radius: 10px; }
-          .caption-glass { min-width: 96%; }
         }
       `}</style>
     </section>
