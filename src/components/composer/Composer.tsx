@@ -40,8 +40,6 @@ export default function Composer() {
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-
-  // NEW: Use demo accounts toggle
   const [useDemo, setUseDemo] = useState(false);
 
   async function handleUpload(file: File) {
@@ -67,7 +65,6 @@ export default function Composer() {
     setPlatforms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
   }
 
-  // Schedule → /api/planned-posts (includes useDemo)
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -100,14 +97,12 @@ export default function Composer() {
     }
   }
 
-  // Launch quick → demo endpoint publishes immediately
   async function launchQuick() {
     setSaving(true);
     setMessage(null);
     try {
       if (!imageUrl) throw new Error("Add an image (upload or paste URL)");
       if (!platforms.length) throw new Error("Pick at least one platform");
-
       const res = await fetch("/api/demo/launch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -115,13 +110,11 @@ export default function Composer() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to launch");
-
       const ids = data.publishIds
         ? Object.entries(data.publishIds)
             .map(([k, v]) => `${k}:${v as string}`)
             .join(", ")
         : data.publishId || "ok";
-
       setMessage(`✅ Launched now → ${ids}`);
     } catch (e: any) {
       setMessage(`❌ ${e.message || e}`);
@@ -134,15 +127,16 @@ export default function Composer() {
     ? `/api/planned-posts?demo=1`
     : `/api/planned-posts?email=${encodeURIComponent(email || "demo@local.dev")}`;
 
-  /* ============ COMMON STYLES (for reuse) ============ */
-  const pageWrap: React.CSSProperties = {
-    backgroundColor: "#8B6B7A", // Deep Mauve
-    minHeight: "100vh",
-  };
-  const container: React.CSSProperties = {
-    maxWidth: "1200px",
-    margin: "0 auto",
-    padding: "24px 16px",
+  /* ===== Shared styles ===== */
+  const pageWrap: React.CSSProperties = { backgroundColor: "#8B6B7A", minHeight: "100vh" };
+  const container: React.CSSProperties = { maxWidth: "1200px", margin: "0 auto", padding: "24px 16px" };
+  const primaryLink: React.CSSProperties = {
+    padding: "8px 12px",
+    borderRadius: 10,
+    color: "rgba(255,255,255,0.92)",
+    fontWeight: 800,
+    textDecoration: "none",
+    transition: "background-color .15s ease",
   };
   const glassBtn: React.CSSProperties = {
     padding: "10px 14px",
@@ -161,54 +155,81 @@ export default function Composer() {
     alignItems: "center",
     gap: 8,
   };
-  const primaryLink: React.CSSProperties = {
-    padding: "8px 12px",
-    borderRadius: 10,
-    color: "rgba(255,255,255,0.92)",
-    fontWeight: 800,
-    textDecoration: "none",
-    transition: "background-color .15s ease",
-  };
 
-  /* ============ UNAUTH VIEW ============ */
-  if (status !== "authenticated") {
+  /* ===== Sticky navbar (shared) ===== */
+  const Navbar = (
+    <header
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 40,
+        borderBottom: "1px solid rgba(255,255,255,0.15)",
+        background: "rgba(139, 107, 122, 0.9)", // #8B6B7A / 90%
+        backdropFilter: "blur(12px)",
+      }}
+    >
+      <div
+        style={{
+          ...container,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <Link href="/dashboard" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Image
+            src="/Humanity_founderslogo.webp"
+            alt="Humanity"
+            width={160}
+            height={44}
+            priority
+            style={{ height: 44, width: "auto", borderRadius: 8, objectFit: "contain" }}
+          />
+        </Link>
+
+        {/* Home · Services · Contact Us */}
+        <nav style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <Link href="/" style={primaryLink}>Home</Link>
+          <Link href="/#services" style={primaryLink}>Services</Link>
+          <Link href="/#contact" style={primaryLink}>Contact&nbsp;Us</Link>
+        </nav>
+      </div>
+    </header>
+  );
+
+  /* ======== 1) LOADING: avoid flash ======== */
+  if (status === "loading") {
     return (
       <main style={pageWrap}>
-        {/* Sticky navbar */}
-        <header
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 40,
-            borderBottom: "1px solid rgba(255,255,255,0.15)",
-            background: "rgba(139, 107, 122, 0.9)", // #8B6B7A / 90%
-            backdropFilter: "blur(12px)",
-          }}
-        >
-          <div style={{ ...container, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <Link href="/dashboard" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Image
-                src="/Humanity_founderslogo.webp"
-                alt="Humanity"
-                width={160}
-                height={44}
-                priority
-                style={{ height: 44, width: "auto", borderRadius: 8, objectFit: "contain" }}
-              />
-            </Link>
+        {Navbar}
+        <div style={{ ...container, display: "grid", placeItems: "center", minHeight: "60vh" }}>
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              border: "3px solid rgba(255,255,255,0.35)",
+              borderTopColor: "rgba(255,255,255,0.9)",
+              animation: "spin 1s linear infinite",
+            }}
+          />
+          <style jsx>{`
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      </main>
+    );
+  }
 
-            {/* Home · Services · Contact Us */}
-            <nav style={{ display: "none", gap: 8, alignItems: "center" } as React.CSSProperties}>
-              {/* display none on tiny screens; feel free to enhance with a burger later */}
-            </nav>
-            <nav style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <Link href="/" style={primaryLink}>Home</Link>
-              <Link href="/#services" style={primaryLink}>Services</Link>
-              <Link href="/#contact" style={primaryLink}>Contact&nbsp;Us</Link>
-            </nav>
-          </div>
-        </header>
-
+  /* ======== 2) UNAUTH ======== */
+  if (status === "unauthenticated") {
+    return (
+      <main style={pageWrap}>
+        {Navbar}
         <div style={container}>
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900, color: "#fff", textShadow: "0 2px 4px rgba(0,0,0,0.5)" }}>
             Login to continue
@@ -216,19 +237,14 @@ export default function Composer() {
           <p style={{ opacity: 0.9, marginTop: 8, color: "#fff" }}>
             Use the demo button below or sign in with any email on the NextAuth page.
           </p>
-
           <button
             onClick={() =>
-              signIn("credentials", {
-                email: "demo@local.dev",
-                callbackUrl: "/composer",
-              })
+              signIn("credentials", { email: "demo@local.dev", callbackUrl: "/composer" })
             }
             style={{ ...glassBtn, marginTop: 12 }}
           >
             Continue as demo@local.dev
           </button>
-
           <div style={{ opacity: 0.8, marginTop: 10, fontSize: 13, color: "rgba(255,255,255,0.85)" }}>
             Or open <code>/api/auth/signin</code> to enter another email.
           </div>
@@ -237,40 +253,10 @@ export default function Composer() {
     );
   }
 
-  /* ============ AUTH VIEW ============ */
+  /* ======== 3) AUTH ======== */
   return (
     <main style={pageWrap}>
-      {/* Sticky navbar */}
-      <header
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 40,
-          borderBottom: "1px solid rgba(255,255,255,0.15)",
-          background: "rgba(139, 107, 122, 0.9)", // #8B6B7A / 90%
-          backdropFilter: "blur(12px)",
-        }}
-      >
-        <div style={{ ...container, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <Link href="/dashboard" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Image
-              src="/Humanity_founderslogo.webp"
-              alt="Humanity"
-              width={160}
-              height={44}
-              priority
-              style={{ height: 44, width: "auto", borderRadius: 8, objectFit: "contain" }}
-            />
-          </Link>
-
-          {/* Home · Services · Contact Us */}
-          <nav style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <Link href="/" style={primaryLink}>Home</Link>
-            <Link href="/#services" style={primaryLink}>Services</Link>
-            <Link href="/#contact" style={primaryLink}>Contact&nbsp;Us</Link>
-          </nav>
-        </div>
-      </header>
+      {Navbar}
 
       <div style={container}>
         {/* Header */}
@@ -304,7 +290,7 @@ export default function Composer() {
         <form
           onSubmit={submit}
           style={{
-            backgroundColor: "#B5979A", // Dusty Rose
+            backgroundColor: "#B5979A",
             borderRadius: 12,
             padding: 24,
             boxShadow: "0 10px 30px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15)",
@@ -313,48 +299,21 @@ export default function Composer() {
             gap: 20,
           }}
         >
-          <ImageUpload
-            imageUrl={imageUrl}
-            onImageUrlChange={setImageUrl}
-            onUpload={handleUpload}
-            uploading={uploading}
-          />
-
+          <ImageUpload imageUrl={imageUrl} onImageUrlChange={setImageUrl} onUpload={handleUpload} uploading={uploading} />
           <CaptionEditor caption={caption} onCaptionChange={setCaption} />
-
           <ScheduleInput when={when} onWhenChange={setWhen} />
-
           <PlatformToggles platforms={platforms} onTogglePlatform={togglePlatform} />
-
-          {/* Connect / OAuth */}
           <ConnectAccounts />
 
           {/* Use Demo toggle */}
-          <label
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              color: "#fff",
-              fontWeight: 700,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={useDemo}
-              onChange={(e) => setUseDemo(e.target.checked)}
-            />
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "#fff", fontWeight: 700 }}>
+            <input type="checkbox" checked={useDemo} onChange={(e) => setUseDemo(e.target.checked)} />
             Use Demo Accounts (preconnected)
           </label>
 
           {/* Actions + links */}
           <div style={{ display: "grid", gap: 16 }}>
-            <ActionButtons
-              onSubmit={submit}
-              onLaunchQuick={launchQuick}
-              saving={saving}
-              uploading={uploading}
-            />
+            <ActionButtons onSubmit={submit} onLaunchQuick={launchQuick} saving={saving} uploading={uploading} />
 
             {/* Verification Links */}
             <aside
@@ -367,147 +326,33 @@ export default function Composer() {
                 color: "rgba(255,255,255,0.9)",
               }}
             >
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 800,
-                  marginBottom: 6,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
                 <span>Verify automation</span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 800,
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                    background: "rgba(255,255,255,0.15)",
-                  }}
-                >
+                <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(255,255,255,0.15)" }}>
                   Demo
                 </span>
               </div>
-              <div
-                style={{
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                  marginBottom: 8,
-                  color: "rgba(255,255,255,0.9)",
-                }}
-              >
-                After you click <strong>Schedule Post</strong> or{" "}
-                <strong>Launch Quick (Demo)</strong>, you can confirm the post on these profiles:
-              </div>
-              <ul
-                style={{
-                  listStyle: "none",
-                  padding: 0,
-                  margin: 0,
-                  display: "grid",
-                  gap: 6,
-                }}
-              >
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 6 }}>
                 <li>
-                  <a
-                    href="https://www.instagram.com/_mmayurr/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      color: "#fff",
-                      textDecoration: "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 8px",
-                      borderRadius: 6,
-                      background: "rgba(255,255,255,0.08)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: "#E4405F",
-                      }}
-                    />
+                  <a href="https://www.instagram.com/_mmayurr/" target="_blank" rel="noopener noreferrer"
+                     style={{ color: "#fff", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 8px", borderRadius: 6, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)" }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#E4405F" }} />
                     Instagram: _mmayurr <span aria-hidden style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}>↗</span>
                   </a>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.78)", marginTop: 4 }}>
-                    Click to see the automated post on your feed.
-                  </div>
                 </li>
-
                 <li>
-                  <a
-                    href="https://www.linkedin.com/in/mayur-dhavale-b98584387/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      color: "#fff",
-                      textDecoration: "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 8px",
-                      borderRadius: 6,
-                      background: "rgba(255,255,255,0.08)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      marginTop: 6,
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: "#0A66C2",
-                      }}
-                    />
-                    LinkedIn: mayur-dhavale-b98584387{" "}
-                    <span aria-hidden style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}>↗</span>
+                  <a href="https://www.linkedin.com/in/mayur-dhavale-b98584387/" target="_blank" rel="noopener noreferrer"
+                     style={{ color: "#fff", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 8px", borderRadius: 6, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", marginTop: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#0A66C2" }} />
+                    LinkedIn: mayur-dhavale-b98584387 <span aria-hidden style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}>↗</span>
                   </a>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.78)", marginTop: 4 }}>
-                    Click to verify the cross-post on your LinkedIn.
-                  </div>
                 </li>
-
                 <li>
-                  <a
-                    href="https://x.com/Mayur_dhavalee"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      color: "#fff",
-                      textDecoration: "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 8px",
-                      borderRadius: 6,
-                      background: "rgba(255,255,255,0.08)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      marginTop: 6,
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: "#1D9BF0",
-                      }}
-                    />
-                    X (Twitter): @Mayur_dhavalee{" "}
-                    <span aria-hidden style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}>↗</span>
+                  <a href="https://x.com/Mayur_dhavalee" target="_blank" rel="noopener noreferrer"
+                     style={{ color: "#fff", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 8px", borderRadius: 6, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", marginTop: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#1D9BF0" }} />
+                    X (Twitter): @Mayur_dhavalee <span aria-hidden style={{ opacity: 0.8, marginLeft: 4, fontSize: 12 }}>↗</span>
                   </a>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.78)", marginTop: 4 }}>
-                    Click to confirm the tweet was posted.
-                  </div>
                 </li>
               </ul>
             </aside>
@@ -528,8 +373,7 @@ export default function Composer() {
             fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", monospace',
           }}
         >
-          <strong>Tip:</strong>{" "}
-          <code>{plannedPostsTipHref}</code> and{" "}
+          <strong>Tip:</strong> <code>{plannedPostsTipHref}</code> and{" "}
           <code>/api/cron/run?secret=***</code> logs to see QUEUED ➜ PUBLISHED.
         </div>
       </div>
