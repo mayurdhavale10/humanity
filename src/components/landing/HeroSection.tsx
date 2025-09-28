@@ -11,11 +11,11 @@ export default function HeroSection() {
     const prevMargin = document.body.style.margin;
     document.body.style.backgroundColor = '#8B6B7A';
     document.body.style.margin = '0';
-    const timer = setTimeout(() => setIsLoaded(true), 100);
+    const t = setTimeout(() => setIsLoaded(true), 80);
     return () => {
       document.body.style.backgroundColor = prevBG;
       document.body.style.margin = prevMargin;
-      clearTimeout(timer);
+      clearTimeout(t);
     };
   }, []);
 
@@ -24,258 +24,226 @@ export default function HeroSection() {
       <div className="hero-box">
         <TopNav isLoaded={isLoaded} />
 
-        {/* Tagline block */}
-        <div className={`copy ${isLoaded ? 'copy-in' : ''}`}>
-          <div className="headline">
-            Connects your platforms. <br />
-            Automates your schedule.
-          </div>
+        {/* top-left label */}
+        <div className={`label ${isLoaded ? 'in' : ''}`}>SOCIAL MEDIA AUTOMATION</div>
 
-          <div className="points">
-            <div className="point">
-              Link Instagram, X, and LinkedIn. Schedule once, post everywhere.
+        {/* grid content */}
+        <div className={`grid ${isLoaded ? 'in' : ''}`}>
+          {/* LEFT: text */}
+          <div className="copy">
+            <h1 className="headline">
+              Connects your platforms.
+              <br />
+              Automates your schedule.
+            </h1>
+
+            <div className="points">
+              <p className="point">
+                Link Instagram, X, and LinkedIn. Schedule once, post everywhere.
+              </p>
+              <p className="point">One tap to cross-post and schedule across all your platforms.</p>
             </div>
-            <div className="point">
-              One tap to cross-post and schedule across all your platforms.
+          </div>
+
+          {/* RIGHT: safe-fit image card (no overflow) */}
+          <div className="visual">
+            <div className="visual-inner">
+              <img
+                src="/landing/background_humanityfounders.webp"
+                alt="Portrait"
+                className="visual-img"
+              />
+
+              {/* inset image kept INSIDE the card */}
+              <div className="inset">
+                <img src="/landing/inset_image.webp" alt="Preview" className="inset-img" />
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Small label */}
-        <div className={`label ${isLoaded ? 'label-in' : ''}`}>
-          SOCIAL MEDIA AUTOMATION
-        </div>
-
-        {/* Right visual */}
-        <div className={`right-visual ${isLoaded ? 'rv-in' : ''}`}>
-          <div className="right-visual-inner">
-            <img
-              src="/landing/background_humanityfounders.webp"
-              alt="Portrait"
-              className={`right-visual-img ${isLoaded ? 'img-in' : ''}`}
-            />
-            <div className="right-visual-overlay" />
-          </div>
-        </div>
-
-        {/* Inset image */}
-        <div className="inset-wrap">
-          <img
-            src="/landing/inset_image.webp"
-            alt="Inset"
-            className="inset-img"
-          />
         </div>
       </div>
 
-      {/* responsive styles */}
       <style jsx>{`
         .hero-root {
-          min-height: 100vh;
+          background: #8b6b7a;
           width: 100%;
+          min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
-          background-color: #8b6b7a;
-          padding: 16px; /* breathing room on small screens */
+          padding: 16px;
         }
+
+        /* Compact outer card */
         .hero-box {
           width: clamp(340px, 92vw, 1200px);
-          min-height: 600px;
+          min-height: auto;
           background: #b5979a;
-          border-radius: 0;
-          box-sizing: border-box;
           border: 1px solid rgba(255, 255, 255, 0.08);
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25),
-            0 2px 6px rgba(0, 0, 0, 0.15);
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), 0 2px 6px rgba(0, 0, 0, 0.15);
           position: relative;
-          overflow: hidden;
+          overflow: hidden; /* ensure nothing looks cropped */
+          border-radius: 0;
+          padding: 72px 24px 24px; /* space for TopNav + content */
         }
 
-        /* Copy block */
-        .copy {
-          position: absolute;
-          top: 50%;
-          left: 40px;
-          z-index: 30;
-          opacity: 0;
-          transform: translateY(-50%) translateX(-100px);
-          transition: all 1.2s cubic-bezier(0.22, 1, 0.36, 1);
-          transition-delay: 0.3s;
-          max-width: calc(100% - 350px);
-        }
-        .copy-in {
-          opacity: 1;
-          transform: translateY(-50%) translateX(0);
-        }
-        .headline {
-          font-size: clamp(28px, 6vw, 64px);
-          font-weight: 900;
-          line-height: 1.1;
-          color: #fff;
-          letter-spacing: -0.02em;
-          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8),
-            0 4px 12px rgba(0, 0, 0, 0.5);
-          font-family: system-ui, -apple-system, sans-serif;
-          margin-bottom: 20px;
-        }
-        .points {
-          background-color: rgba(0, 0, 0, 0.6);
-          padding: 16px 18px;
-          border-radius: 8px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .point {
-          font-size: clamp(15px, 2.5vw, 20px);
-          font-weight: 600;
-          color: #fff;
-          line-height: 1.4;
-          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
-          opacity: 1;
-        }
-        .point + .point {
-          margin-top: 10px;
-        }
-
-        /* Label */
+        /* Small top tag */
         .label {
           position: absolute;
-          top: 30px;
-          left: 40px;
+          top: 18px;
+          left: 20px;
           font-size: 12px;
-          font-weight: 500;
-          letter-spacing: 0.15em;
-          color: rgba(255, 255, 255, 0.8);
-          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+          font-weight: 600;
+          letter-spacing: 0.14em;
+          color: rgba(255, 255, 255, 0.85);
           opacity: 0;
-          transform: translate(200px, 150px);
-          transition: all 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-          transition-delay: 1.3s;
-          z-index: 25;
+          transform: translateY(10px);
+          transition: all 600ms ease;
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+          z-index: 2;
         }
-        .label-in {
+        .in {
           opacity: 1;
-          transform: translate(0, 0);
+          transform: translateY(0);
         }
 
-        /* Right visual */
-        .right-visual {
-          position: absolute;
-          top: -10px;
-          bottom: -10px;
-          right: 80px;
-          display: flex;
+        /* Two-column grid that NEVER overflows */
+        .grid {
+          display: grid;
+          grid-template-columns: 1.05fr 0.95fr;
+          gap: 24px;
           align-items: center;
-          justify-content: flex-end;
-          opacity: 0;
-          transform: translateX(100px);
-          transition: all 1.5s cubic-bezier(0.22, 1, 0.36, 1);
-          transition-delay: 0.2s;
-        }
-        .rv-in {
-          opacity: 1;
-          transform: translateX(0);
-        }
-        .right-visual-inner {
-          position: relative;
-          height: calc(100% + 20px);
-        }
-        .right-visual-img {
-          height: 100%;
-          width: auto;
-          display: block;
-          object-fit: cover;
-          transform: scale(1.1);
-          transition: transform 2s ease-out;
-          transition-delay: 0.8s;
-        }
-        .img-in {
-          transform: scale(1);
-        }
-        .right-visual-overlay {
-          position: absolute;
-          inset: 0;
-          background-color: rgba(58, 46, 50, 0.05);
-          pointer-events: none;
+          max-height: 520px; /* compact height target */
         }
 
-        /* Inset image */
-        .inset-wrap {
+        /* LEFT */
+        .copy {
+          max-width: 560px;
+          justify-self: start;
+        }
+        .headline {
+          margin: 0 0 14px;
+          font-size: clamp(28px, 4.8vw, 48px); /* smaller for compactness */
+          line-height: 1.1;
+          font-weight: 900;
+          color: #fff;
+          letter-spacing: -0.02em;
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+        .points {
+          background-color: rgba(0, 0, 0, 0.58);
+          padding: 14px 16px;
+          border-radius: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .point {
+          margin: 0;
+          color: #fff;
+          font-weight: 600;
+          font-size: clamp(14px, 2.2vw, 18px);
+          line-height: 1.4;
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+        .point + .point {
+          margin-top: 8px;
+        }
+
+        /* RIGHT - photo card fits within the grid cell */
+        .visual {
+          justify-self: stretch;
+          align-self: center;
+        }
+        .visual-inner {
+          position: relative;
+          width: 100%;
+          height: min(440px, 52vh); /* capped height so it never feels cropped */
+          border-radius: 12px;
+          overflow: hidden; /* hard stop, nothing bleeds */
+          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(58, 46, 50, 0.08);
+        }
+        .visual-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover; /* fills but safely clipped within rounded card */
+          transform: scale(${isLoaded ? 1 : 1.04});
+          transition: transform 900ms ease-out;
+        }
+
+        /* Inset thumbnail stays INSIDE the card bottom-right */
+        .inset {
           position: absolute;
-          top: 120px;
-          right: 20px;
-          width: 240px;
-          height: 300px;
-          z-index: 20;
-          overflow: visible;
+          right: 12px;
+          bottom: 12px;
+          width: clamp(120px, 32%, 160px);
+          aspect-ratio: 4 / 5;
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          backdrop-filter: blur(0.5px);
         }
         .inset-img {
           width: 100%;
           height: 100%;
           object-fit: cover;
-          border-radius: 0;
-          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+          display: block;
         }
 
-        /* ======= MOBILE (≤ 768px) ======= */
+        /* ====== TABLET ====== */
+        @media (max-width: 1024px) {
+          .hero-box {
+            padding: 68px 20px 20px;
+          }
+          .grid {
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-height: 520px;
+          }
+          .visual-inner {
+            height: min(400px, 48vh);
+          }
+        }
+
+        /* ====== MOBILE ====== */
         @media (max-width: 768px) {
           .hero-root {
             padding: 12px;
           }
           .hero-box {
-            min-height: auto; /* allow content height */
-            padding: 18px 16px 20px 16px; /* inner padding for small screens */
+            padding: 60px 14px 16px;
           }
-          /* Make layout stacked and centered */
+          .grid {
+            grid-template-columns: 1fr;
+            gap: 16px;
+            max-height: none; /* let it flow naturally */
+          }
           .copy {
-            position: relative;
-            top: auto;
-            left: auto;
-            transform: translateY(0) translateX(0);
-            opacity: 1; /* avoid weird animations on small devices */
-            transition: none;
-            max-width: 100%;
             text-align: center;
-            margin-top: 56px; /* room below TopNav */
-          }
-          .headline {
-            font-size: clamp(24px, 7vw, 36px);
-            margin-bottom: 14px;
+            margin: 4px auto 0;
+            max-width: 640px;
           }
           .points {
-            text-align: left; /* keep bullets readable */
-            padding: 14px 14px;
+            text-align: left;
           }
-          .label {
-            left: 16px;
-            top: 16px;
-            font-size: 11px;
-            letter-spacing: 0.12em;
-            opacity: 1;
-            transform: none;
-            transition: none;
+          .visual-inner {
+            height: 320px; /* compact but visible */
           }
-          /* Hide heavy right image on phones */
-          .right-visual,
-          .inset-wrap {
-            display: none;
+          .inset {
+            right: 10px;
+            bottom: 10px;
+            width: 34%;
           }
         }
 
-        /* ======= TABLET (769–1024px) ======= */
-        @media (min-width: 769px) and (max-width: 1024px) {
-          .copy {
-            left: 32px;
-            max-width: calc(100% - 280px);
+        /* ====== VERY SMALL phones ====== */
+        @media (max-width: 380px) {
+          .visual-inner {
+            height: 280px;
           }
-          .inset-wrap {
-            right: 16px;
-            width: 200px;
-            height: 260px;
-            top: 110px;
-          }
-          .right-visual {
-            right: 56px;
+          .inset {
+            display: none; /* remove extra visual noise on tiny screens */
           }
         }
       `}</style>
